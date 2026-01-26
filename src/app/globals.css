@@ -1,0 +1,133 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Voice Intelligence App - Yellow-Black Theme */
+:root {
+  --color-primary: #FFD700;      /* Gold/Yellow */
+  --color-secondary: #1A1A1A;    /* Deep Black */
+  --color-accent: #FFA500;       /* Orange CTAs */
+  --color-background: #0F0F0F;   /* Near-black */
+  --color-surface: #1A1A1A;      /* Card backgrounds */
+  --color-text: #FFFFFF;         /* White text */
+  --color-text-muted: #A0A0A0;   /* Muted text */
+  --color-success: #00FF00;      /* Bright green */
+  --color-error: #FF4444;        /* Red */
+  --color-warning: #FFA500;      /* Orange */
+
+  /* Border radius */
+  --radius-sm: 4px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --radius-xl: 16px;
+}
+
+@layer base {
+  * {
+    @apply border-secondary;
+  }
+
+  html {
+    @apply antialiased;
+  }
+
+  body {
+    @apply bg-background text-text;
+    font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  }
+
+  /* Custom scrollbar */
+  ::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+
+  ::-webkit-scrollbar-track {
+    @apply bg-background;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    @apply bg-secondary rounded-full;
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    @apply bg-primary/50;
+  }
+}
+
+@layer components {
+  /* Primary button */
+  .btn-primary {
+    @apply bg-primary text-secondary font-semibold px-4 py-2 rounded-lg
+           hover:bg-primary/90 active:bg-primary/80
+           transition-colors duration-150 ease-in-out
+           disabled:opacity-50 disabled:cursor-not-allowed;
+  }
+
+  /* Secondary button */
+  .btn-secondary {
+    @apply bg-secondary text-text border border-primary/30 font-medium px-4 py-2 rounded-lg
+           hover:border-primary/60 hover:bg-secondary/80
+           transition-colors duration-150 ease-in-out
+           disabled:opacity-50 disabled:cursor-not-allowed;
+  }
+
+  /* Accent button */
+  .btn-accent {
+    @apply bg-accent text-secondary font-semibold px-4 py-2 rounded-lg
+           hover:bg-accent/90 active:bg-accent/80
+           transition-colors duration-150 ease-in-out
+           disabled:opacity-50 disabled:cursor-not-allowed;
+  }
+
+  /* Card component */
+  .card {
+    @apply bg-surface border border-secondary rounded-xl p-4;
+  }
+
+  /* Input field */
+  .input {
+    @apply bg-background border border-secondary rounded-lg px-3 py-2
+           text-text placeholder:text-text-muted
+           focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/50
+           transition-colors duration-150;
+  }
+
+  /* Recording indicator */
+  .recording-pulse {
+    @apply animate-pulse;
+    box-shadow: 0 0 0 0 rgba(255, 68, 68, 0.7);
+    animation: pulse-ring 1.5s cubic-bezier(0.455, 0.03, 0.515, 0.955) infinite;
+  }
+}
+
+@layer utilities {
+  .text-balance {
+    text-wrap: balance;
+  }
+
+  /* Glow effects */
+  .glow-primary {
+    box-shadow: 0 0 20px rgba(255, 215, 0, 0.3);
+  }
+
+  .glow-accent {
+    box-shadow: 0 0 20px rgba(255, 165, 0, 0.3);
+  }
+
+  .glow-error {
+    box-shadow: 0 0 20px rgba(255, 68, 68, 0.3);
+  }
+}
+
+@keyframes pulse-ring {
+  0% {
+    box-shadow: 0 0 0 0 rgba(255, 68, 68, 0.7);
+  }
+  70% {
+    box-shadow: 0 0 0 10px rgba(255, 68, 68, 0);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(255, 68, 68, 0);
+  }
+}
