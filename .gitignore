@@ -24,6 +24,8 @@ src-tauri/target/
 # Testing
 coverage/
 .playwright/
+playwright-report/
+test-results/
 
 # Logs
 *.log
