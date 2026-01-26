@@ -15,7 +15,7 @@ export default defineConfig({
   reporter: 'html',
 
   use: {
-    baseURL: 'http://localhost:3000',
+    baseURL: 'http://localhost:3001',
     trace: 'on-first-retry',
     screenshot: 'only-on-failure',
   },
@@ -29,8 +29,8 @@ export default defineConfig({
 
   // Run the Next.js dev server before starting the tests
   webServer: {
-    command: 'npx next dev',
-    url: 'http://localhost:3000',
+    command: 'npx next dev -p 3001',
+    url: 'http://localhost:3001',
     reuseExistingServer: !process.env.CI,
     timeout: 120 * 1000,
   },

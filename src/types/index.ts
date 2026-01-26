@@ -34,6 +34,12 @@ export interface Settings {
   // API Keys (stored securely)
   openaiApiKey?: string;
   openrouterApiKey?: string;
+  // Microphone
+  selectedMicrophone?: string;
+  // Whisper
+  whisperPath?: string;
+  // Setup
+  setupComplete?: boolean;
 }
 
 export interface HistoryEntry {

@@ -1,22 +1,27 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import Link from 'next/link';
 import { RecordingOverlay } from '../components/RecordingOverlay';
 import { EnrichmentModeSelector } from '../components/EnrichmentModeSelector';
 import { OutputRouter } from '../components/OutputRouter';
+import { SettingsPanel } from '../components/SettingsPanel';
 import { useSettings } from '../hooks/useSettings';
 import { useRecording } from '../hooks/useRecording';
 import { useHotkey } from '../hooks/useHotkey';
 import { useLLM } from '../hooks/useLLM';
 import type { EnrichmentMode, OutputTarget } from '../types';
-import { addToHistory } from '../lib/api';
+import { addToHistory, getHistory, type HistoryItem } from '../lib/api';
 import { getSTTService } from '../services/stt';
+import { SetupWizard } from '../components/SetupWizard';
 
 export default function Home() {
-  const { settings, isLoading: settingsLoading } = useSettings();
-  const recording = useRecording();
+  const { settings, isLoading: settingsLoading, updateSettings } = useSettings();
+  const recording = useRecording({ selectedMicrophone: settings.selectedMicrophone });
   const llm = useLLM(settings.llmProvider);
+  const [showSetupWizard, setShowSetupWizard] = useState(false);
+  const [showSettings, setShowSettings] = useState(false);
+  const [showHistory, setShowHistory] = useState(false);
+  const [historyEntries, setHistoryEntries] = useState<HistoryItem[]>([]);
 
   const [enrichmentMode, setEnrichmentMode] = useState<EnrichmentMode>(settings.enrichmentMode);
   const [outputTarget, setOutputTarget] = useState<OutputTarget>(settings.outputTarget);
@@ -26,6 +31,7 @@ export default function Home() {
   const [isEnriching, setIsEnriching] = useState(false);
   const [isTranscribing, setIsTranscribing] = useState(false);
   const [transcriptionError, setTranscriptionError] = useState<string | null>(null);
+  const [sttConfigured, setSTTConfigured] = useState<boolean | null>(null);
 
   // Update local state when settings load
   useEffect(() => {
@@ -34,6 +40,32 @@ export default function Home() {
       setOutputTarget(settings.outputTarget);
       setCustomPrompt(settings.customPrompt || '');
       llm.setLanguage(settings.language);
+
+      // Configure LLM provider with API key
+      if (settings.llmProvider === 'openai' && settings.openaiApiKey) {
+        llm.configureProvider('openai', settings.openaiApiKey, settings.llmModel);
+      } else if (settings.llmProvider === 'openrouter' && settings.openrouterApiKey) {
+        llm.configureProvider('openrouter', settings.openrouterApiKey, settings.llmModel);
+      }
+
+      // Check if STT is configured
+      const checkSTT = async () => {
+        const sttService = getSTTService();
+        if (settings.openaiApiKey) {
+          sttService.configureOpenAI(settings.openaiApiKey);
+        }
+        if (settings.whisperPath) {
+          sttService.configureWhisperPath(settings.whisperPath);
+        }
+        const provider = await sttService.getAvailableProvider();
+        setSTTConfigured(provider !== null);
+      };
+      checkSTT();
+
+      // Show setup wizard if not completed
+      if (!settings.setupComplete) {
+        setShowSetupWizard(true);
+      }
     }
   }, [settings, settingsLoading, llm]);
 
@@ -118,8 +150,117 @@ export default function Home() {
     recording.startRecording();
   };
 
+  const handleSetupComplete = async (updates: Partial<typeof settings>) => {
+    await updateSettings(updates);
+    setShowSetupWizard(false);
+  };
+
+  const handleSetupSkip = () => {
+    setShowSetupWizard(false);
+  };
+
+  // Load history when showing history modal
+  const handleShowHistory = async () => {
+    try {
+      const entries = await getHistory();
+      setHistoryEntries(entries);
+    } catch (error) {
+      console.error('Failed to load history:', error);
+    }
+    setShowHistory(true);
+  };
+
   return (
     <div className="min-h-screen bg-background">
+      {/* Setup Wizard */}
+      {showSetupWizard && (
+        <SetupWizard
+          settings={settings}
+          onComplete={handleSetupComplete}
+          onSkip={handleSetupSkip}
+        />
+      )}
+
+      {/* Settings Modal */}
+      {showSettings && (
+        <div className="fixed inset-0 z-50 flex items-start justify-center bg-black/50 overflow-y-auto">
+          <div className="min-h-screen py-8 px-4 w-full max-w-2xl">
+            <div className="bg-background rounded-lg shadow-xl">
+              <div className="border-b border-secondary px-6 py-4 flex items-center justify-between">
+                <h2 className="text-xl font-bold text-text">Settings</h2>
+                <button
+                  onClick={() => setShowSettings(false)}
+                  className="text-text-muted hover:text-text transition-colors"
+                >
+                  <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+              <div className="p-6">
+                <SettingsPanel
+                  settings={settings}
+                  onSave={updateSettings}
+                  isLoading={settingsLoading}
+                  onClose={() => setShowSettings(false)}
+                />
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* History Modal */}
+      {showHistory && (
+        <div className="fixed inset-0 z-50 flex items-start justify-center bg-black/50 overflow-y-auto">
+          <div className="min-h-screen py-8 px-4 w-full max-w-4xl">
+            <div className="bg-background rounded-lg shadow-xl">
+              <div className="border-b border-secondary px-6 py-4 flex items-center justify-between">
+                <h2 className="text-xl font-bold text-text">History</h2>
+                <button
+                  onClick={() => setShowHistory(false)}
+                  className="text-text-muted hover:text-text transition-colors"
+                >
+                  <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+              <div className="p-6">
+                {historyEntries.length === 0 ? (
+                  <div className="text-center py-12 text-text-muted">
+                    <p>No recordings yet</p>
+                    <p className="text-sm mt-2">Your transcription history will appear here</p>
+                  </div>
+                ) : (
+                  <div className="space-y-4">
+                    {historyEntries.map((entry) => (
+                      <div key={entry.id} className="card">
+                        <div className="flex justify-between items-start mb-2">
+                          <span className="text-sm text-text-muted">
+                            {new Date(entry.timestamp).toLocaleString()}
+                          </span>
+                          <span className="text-xs bg-secondary px-2 py-1 rounded text-text-muted">
+                            {entry.enrichmentMode}
+                          </span>
+                        </div>
+                        <p className="text-text mb-2">{entry.rawTranscript}</p>
+                        {entry.enrichedContent && (
+                          <div className="mt-3 pt-3 border-t border-secondary">
+                            <p className="text-sm text-text-muted mb-1">Enriched:</p>
+                            <p className="text-text text-sm">{entry.enrichedContent}</p>
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Recording Overlay */}
       <RecordingOverlay
         state={recording.state}
@@ -146,18 +287,18 @@ export default function Home() {
           </div>
 
           <nav className="flex items-center gap-4">
-            <Link
-              href="/history"
+            <button
+              onClick={handleShowHistory}
               className="text-text-muted hover:text-text transition-colors"
             >
               History
-            </Link>
-            <Link
-              href="/settings"
+            </button>
+            <button
+              onClick={() => setShowSettings(true)}
               className="text-text-muted hover:text-text transition-colors"
             >
               Settings
-            </Link>
+            </button>
           </nav>
         </div>
       </header>
@@ -169,18 +310,34 @@ export default function Home() {
           <div className="flex items-center gap-4">
             <div
               className={`w-3 h-3 rounded-full ${
+                hotkey.isLoading ? 'bg-warning animate-pulse' :
                 hotkey.isRegistered ? 'bg-success' : 'bg-error'
               }`}
             />
             <span className="text-sm text-text-muted">
-              {hotkey.isRegistered
-                ? `Press ${settings.hotkey.replace('CommandOrControl', 'Ctrl')} to record`
-                : 'Hotkey not registered'}
+              {hotkey.isLoading
+                ? 'Registering hotkey...'
+                : hotkey.isRegistered
+                  ? `Press ${settings.hotkey.replace('CommandOrControl', 'Ctrl')} to record`
+                  : 'Hotkey not registered'}
             </span>
           </div>
-          {hotkey.error && (
-            <span className="text-sm text-error">{hotkey.error}</span>
-          )}
+          <div className="flex items-center gap-4">
+            {sttConfigured === false && (
+              <button
+                onClick={() => setShowSettings(true)}
+                className="text-sm text-warning hover:text-warning/80 flex items-center gap-1"
+              >
+                <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                  <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+                </svg>
+                Configure transcription
+              </button>
+            )}
+            {hotkey.error && !hotkey.isLoading && (
+              <span className="text-sm text-error">{hotkey.error}</span>
+            )}
+          </div>
         </div>
 
         {/* Recording Button */}
@@ -224,17 +381,63 @@ export default function Home() {
         {/* Transcription Error */}
         {transcriptionError && !transcript && (
           <div className="flex flex-col items-center py-16">
-            <div className="p-6 bg-error/10 border border-error rounded-lg text-error max-w-md text-center">
-              <h3 className="font-semibold mb-2">Transcription Failed</h3>
-              <p className="text-sm mb-4">{transcriptionError}</p>
-              <button
-                onClick={() => {
-                  setTranscriptionError(null);
-                }}
-                className="btn-secondary text-sm"
-              >
-                Try Again
-              </button>
+            <div className="p-6 bg-error/10 border border-error rounded-lg max-w-2xl w-full">
+              <h3 className="font-semibold mb-2 text-error">Transcription Failed</h3>
+
+              {/* Short error summary */}
+              <p className="text-sm mb-4 text-text-muted">
+                {transcriptionError.split('\n')[0]}
+              </p>
+
+              {/* Detailed error (expandable) */}
+              {transcriptionError.includes('\n') && (
+                <details className="mb-4">
+                  <summary className="text-sm text-primary cursor-pointer hover:underline">
+                    Show details
+                  </summary>
+                  <pre className="mt-2 p-3 bg-secondary/50 rounded text-xs text-text-muted overflow-x-auto whitespace-pre-wrap max-h-48 overflow-y-auto">
+                    {transcriptionError}
+                  </pre>
+                </details>
+              )}
+
+              {transcriptionError.includes('No speech-to-text provider') ||
+               transcriptionError.includes('live audio input') ? (
+                <div className="text-sm text-text mb-4 space-y-2">
+                  <p className="font-medium">To enable transcription, you need one of:</p>
+                  <ul className="list-disc list-inside space-y-1 text-text-muted">
+                    <li><strong>OpenAI API Key</strong> - Add in Settings for cloud transcription</li>
+                    <li><strong>whisper.cpp</strong> - Install locally for private transcription</li>
+                  </ul>
+                </div>
+              ) : null}
+
+              {transcriptionError.includes('Whisper binary not found') ||
+               transcriptionError.includes('transcribe_audio') ? (
+                <div className="text-sm text-text mb-4 space-y-2">
+                  <p className="font-medium">Whisper.cpp is not properly configured:</p>
+                  <ul className="list-disc list-inside space-y-1 text-text-muted">
+                    <li>Go to Settings and install whisper.cpp</li>
+                    <li>Or manually select the whisper executable path</li>
+                    <li>Make sure a whisper model is downloaded</li>
+                  </ul>
+                </div>
+              ) : null}
+
+              <div className="flex gap-3">
+                <button
+                  onClick={() => setTranscriptionError(null)}
+                  className="btn-secondary text-sm"
+                >
+                  Try Again
+                </button>
+                <button
+                  onClick={() => setShowSettings(true)}
+                  className="btn-primary text-sm"
+                >
+                  Open Settings
+                </button>
+              </div>
             </div>
           </div>
         )}

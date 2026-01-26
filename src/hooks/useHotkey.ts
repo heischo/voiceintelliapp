@@ -16,13 +16,13 @@ export function useHotkey(
   initialShortcut?: string,
   onTrigger?: () => void
 ): UseHotkeyReturn {
-  const [currentShortcut, setCurrentShortcut] = useState<string | null>(
-    initialShortcut || null
-  );
   const [isRegistered, setIsRegistered] = useState(false);
-  const [isLoading, setIsLoading] = useState(false);
+  const [isLoading, setIsLoading] = useState(true); // Start as loading
   const [error, setError] = useState<string | null>(null);
   const callbackRef = useRef(onTrigger);
+  const currentShortcutRef = useRef<string | null>(null);
+  const isRegisteredRef = useRef(false);
+  const setupAttemptedRef = useRef(false);
 
   // Keep callback ref updated
   useEffect(() => {
@@ -31,16 +31,74 @@ export function useHotkey(
 
   // Register hotkey on mount if initial shortcut provided
   useEffect(() => {
-    if (initialShortcut && callbackRef.current) {
-      registerShortcut(initialShortcut, callbackRef.current);
-    }
+    let isMounted = true;
 
-    return () => {
-      if (currentShortcut) {
-        unregisterHotkey(currentShortcut).catch(console.error);
+    const setupHotkey = async () => {
+      if (!initialShortcut) {
+        setIsLoading(false);
+        return;
+      }
+
+      // Wait a short moment for the app to fully initialize
+      await new Promise(resolve => setTimeout(resolve, 100));
+
+      if (!isMounted) return;
+
+      try {
+        // Try to unregister first (in case it's still registered from a previous session)
+        try {
+          await unregisterHotkey(initialShortcut);
+        } catch {
+          // Ignore - might not be registered
+        }
+
+        // Create a wrapper callback that uses the ref
+        const wrappedCallback = () => {
+          if (callbackRef.current) {
+            callbackRef.current();
+          }
+        };
+
+        await registerHotkey(initialShortcut, wrappedCallback);
+
+        if (isMounted) {
+          currentShortcutRef.current = initialShortcut;
+          isRegisteredRef.current = true;
+          setIsRegistered(true);
+          setError(null);
+          setupAttemptedRef.current = true;
+        }
+      } catch (err) {
+        if (isMounted) {
+          console.error('Hotkey registration failed:', err);
+          const message = err instanceof Error ? err.message : 'Failed to register hotkey';
+          setError(message);
+          setIsRegistered(false);
+          isRegisteredRef.current = false;
+          setupAttemptedRef.current = true;
+        }
+      } finally {
+        if (isMounted) {
+          setIsLoading(false);
+        }
       }
     };
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+    setupHotkey();
+
+    return () => {
+      isMounted = false;
+      // Cleanup on unmount
+      const shortcut = currentShortcutRef.current;
+      if (shortcut && isRegisteredRef.current) {
+        unregisterHotkey(shortcut).catch(() => {
+          // Ignore errors on cleanup
+        });
+        isRegisteredRef.current = false;
+        currentShortcutRef.current = null;
+      }
+    };
+  }, [initialShortcut]);
 
   const registerShortcut = useCallback(
     async (shortcut: string, callback: () => void) => {
@@ -49,18 +107,35 @@ export function useHotkey(
         setError(null);
 
         // Unregister previous shortcut if exists
-        if (currentShortcut && currentShortcut !== shortcut) {
-          await unregisterHotkey(currentShortcut);
+        const currentShortcut = currentShortcutRef.current;
+        if (currentShortcut && currentShortcut !== shortcut && isRegisteredRef.current) {
+          try {
+            await unregisterHotkey(currentShortcut);
+          } catch {
+            // Ignore
+          }
+        }
+
+        // Check and unregister if already registered
+        const alreadyRegistered = await isHotkeyRegistered(shortcut);
+        if (alreadyRegistered) {
+          try {
+            await unregisterHotkey(shortcut);
+          } catch {
+            // Ignore
+          }
         }
 
         // Register new shortcut
         await registerHotkey(shortcut, callback);
-        setCurrentShortcut(shortcut);
+        currentShortcutRef.current = shortcut;
+        isRegisteredRef.current = true;
         setIsRegistered(true);
       } catch (err) {
         const message = err instanceof Error ? err.message : 'Failed to register hotkey';
         setError(message);
         setIsRegistered(false);
+        isRegisteredRef.current = false;
 
         // Check if it's a conflict
         if (message.toLowerCase().includes('already registered') ||
@@ -73,17 +148,19 @@ export function useHotkey(
         setIsLoading(false);
       }
     },
-    [currentShortcut]
+    []
   );
 
   const unregisterShortcut = useCallback(async () => {
+    const currentShortcut = currentShortcutRef.current;
     if (!currentShortcut) return;
 
     try {
       setIsLoading(true);
       setError(null);
       await unregisterHotkey(currentShortcut);
-      setCurrentShortcut(null);
+      currentShortcutRef.current = null;
+      isRegisteredRef.current = false;
       setIsRegistered(false);
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to unregister hotkey';
@@ -92,7 +169,7 @@ export function useHotkey(
     } finally {
       setIsLoading(false);
     }
-  }, [currentShortcut]);
+  }, []);
 
   const checkConflict = useCallback(async (shortcut: string): Promise<boolean> => {
     try {

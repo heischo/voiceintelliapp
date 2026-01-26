@@ -4,8 +4,11 @@ A privacy-first desktop voice application for knowledge workers. Record voice no
 
 ## Features
 
+- **Setup Wizard** - Guided first-run setup for microphone, transcription, and API configuration
+- **Microphone Selection** - Choose and test your preferred microphone
 - **Global Hotkey Activation** - Press `Ctrl+Shift+Space` (configurable) to start/stop recording from any application
 - **Local Transcription** - Speech-to-text using whisper.cpp for complete privacy
+- **One-Click Whisper Install** - Install whisper.cpp directly from the app (Windows/macOS)
 - **Cloud Fallback** - Optional OpenAI Whisper API when local transcription isn't available
 - **AI Enrichment** - Process transcripts with 5 built-in modes:
   - Clean Transcript - Remove filler words, fix grammar
@@ -31,13 +34,24 @@ A privacy-first desktop voice application for knowledge workers. Record voice no
 
 - Node.js 18+
 - Rust 1.77+
-- For local transcription: whisper.cpp binary installed
+- For local transcription: whisper.cpp (can be installed from within the app)
 
 ### Installing whisper.cpp
+
+You can install whisper.cpp directly from the app:
+
+1. Open **Settings** > **Transcription**
+2. Click **"Install whisper.cpp"**
+3. The app will download and set up whisper.cpp automatically
+
+Or install manually:
 
 ```bash
 # macOS
 brew install whisper-cpp
+
+# Windows
+# Download from https://github.com/ggerganov/whisper.cpp/releases
 
 # Linux (build from source)
 git clone https://github.com/ggerganov/whisper.cpp
@@ -92,6 +106,16 @@ Access settings via the gear icon or navigate to `/settings`:
 - **History Retention**: How long to keep transcriptions
 
 ## Usage
+
+### First Run Setup
+
+On first launch, the Setup Wizard will guide you through:
+
+1. **Microphone Selection** - Choose and test your microphone
+2. **Transcription Setup** - Install whisper.cpp or configure cloud transcription
+3. **API Key Configuration** - Add your OpenAI API key (optional if using whisper.cpp)
+
+### Recording
 
 1. **Start Recording**: Press the global hotkey or click the microphone button
 2. **Stop Recording**: Press the hotkey again or click Stop

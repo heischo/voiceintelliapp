@@ -43,6 +43,11 @@ async function convertToWav(audioBlob: Blob): Promise<Blob> {
   return audioBlob;
 }
 
+interface WhisperCheckResult {
+  available: boolean;
+  path: string | null;
+}
+
 /**
  * Local Whisper Provider using whisper-node
  * This runs whisper.cpp locally for privacy
@@ -50,9 +55,14 @@ async function convertToWav(audioBlob: Blob): Promise<Blob> {
 export class LocalWhisperProvider implements STTProvider {
   name = 'local-whisper';
   private modelPath: string;
+  private whisperPath: string | null = null;
 
   constructor(modelPath: string = 'base.en') {
     this.modelPath = modelPath;
+  }
+
+  setWhisperPath(path: string | null): void {
+    this.whisperPath = path;
   }
 
   async isAvailable(): Promise<boolean> {
@@ -62,26 +72,40 @@ export class LocalWhisperProvider implements STTProvider {
     try {
       // Check if whisper command is available via Tauri
       const { invoke } = await import('@tauri-apps/api/core');
-      const available = await invoke<boolean>('check_whisper_available');
-      return available;
+      const result = await invoke<WhisperCheckResult>('check_whisper_available', {
+        savedPath: this.whisperPath,
+      });
+      if (result.path) {
+        this.whisperPath = result.path;
+      }
+      return result.available;
     } catch {
       return false;
     }
   }
 
   async transcribe(audioBlob: Blob, language: Language): Promise<TranscriptionResult> {
+    const steps: string[] = [];
+
     try {
+      steps.push('Loading Tauri APIs...');
       const { invoke } = await import('@tauri-apps/api/core');
       const { writeFile, remove } = await import('@tauri-apps/plugin-fs');
       const { tempDir } = await import('@tauri-apps/api/path');
 
-      // Save audio to temp file
+      steps.push('Getting temp directory...');
       const tempPath = await tempDir();
-      const audioPath = `${tempPath}recording-${Date.now()}.webm`;
+      const audioPath = `${tempPath}recording-${Date.now()}.wav`;
+      steps.push(`Temp path: ${audioPath}`);
 
+      steps.push('Converting audio blob...');
       const arrayBuffer = await audioBlob.arrayBuffer();
+      steps.push(`Audio size: ${arrayBuffer.byteLength} bytes`);
+
+      steps.push('Writing temp file...');
       await writeFile(audioPath, new Uint8Array(arrayBuffer));
 
+      steps.push(`Calling whisper transcribe_audio (whisperPath: ${this.whisperPath || 'auto-detect'})...`);
       // Call whisper via Tauri command
       const result = await invoke<{
         text: string;
@@ -91,10 +115,16 @@ export class LocalWhisperProvider implements STTProvider {
         audioPath,
         language,
         model: this.modelPath,
+        whisperPath: this.whisperPath,
       });
 
+      steps.push('Cleaning up temp file...');
       // Clean up temp file
-      await remove(audioPath);
+      try {
+        await remove(audioPath);
+      } catch {
+        // Ignore cleanup errors
+      }
 
       return {
         text: result.text.trim(),
@@ -102,9 +132,18 @@ export class LocalWhisperProvider implements STTProvider {
         duration: result.duration,
       };
     } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      const detailedMessage = `Local transcription failed at step: ${steps[steps.length - 1] || 'initialization'}\n\nError: ${errorMessage}\n\nSteps completed:\n${steps.map((s, i) => `${i + 1}. ${s}`).join('\n')}`;
+
+      console.error('Transcription error details:', {
+        steps,
+        error,
+        whisperPath: this.whisperPath,
+      });
+
       throw new STTError(
         'LOCAL_TRANSCRIPTION_FAILED',
-        error instanceof Error ? error.message : 'Local transcription failed',
+        detailedMessage,
         true
       );
     }
@@ -243,6 +282,13 @@ export class STTService {
     const provider = this.providers.get('openai-whisper');
     if (provider && provider instanceof OpenAIWhisperProvider) {
       provider.setApiKey(apiKey);
+    }
+  }
+
+  configureWhisperPath(path: string | undefined): void {
+    const provider = this.providers.get('local-whisper');
+    if (provider && provider instanceof LocalWhisperProvider) {
+      provider.setWhisperPath(path || null);
     }
   }
 
