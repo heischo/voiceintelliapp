@@ -9,6 +9,9 @@ out/
 # Tauri build output
 src-tauri/target/
 
+# Setup EXE build output
+dist/
+
 # Environment files (API keys should be in OS Keychain)
 .env
 .env.local

@@ -1,6 +1,9 @@
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 use std::process::Command;
+use futures::StreamExt;
+use std::io::Write;
+use tauri::{Emitter, Window};
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct AppSettings {
@@ -518,6 +521,216 @@ pub struct InstallResult {
     pub success: bool,
     pub message: String,
     pub path: Option<String>,
+}
+
+/// Information about a whisper model
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct WhisperModel {
+    pub id: String,
+    pub name: String,
+    pub size: String,
+    pub size_bytes: u64,
+    pub download_url: String,
+    pub installed: bool,
+    pub installed_path: Option<String>,
+    pub is_multilingual: bool,
+}
+
+/// Get list of available whisper models with their installation status
+#[tauri::command]
+pub fn get_available_models() -> Vec<WhisperModel> {
+    // Define available models based on whisper.cpp
+    let models_info = vec![
+        ("tiny", "Tiny (English)", "75 MB", 75_000_000u64, "ggml-tiny.en.bin", false),
+        ("tiny-multi", "Tiny (Multilingual)", "75 MB", 75_000_000u64, "ggml-tiny.bin", true),
+        ("base", "Base (English)", "142 MB", 142_000_000u64, "ggml-base.en.bin", false),
+        ("base-multi", "Base (Multilingual)", "142 MB", 142_000_000u64, "ggml-base.bin", true),
+        ("small", "Small (English)", "466 MB", 466_000_000u64, "ggml-small.en.bin", false),
+        ("small-multi", "Small (Multilingual)", "466 MB", 466_000_000u64, "ggml-small.bin", true),
+        ("medium", "Medium (English)", "1.5 GB", 1_500_000_000u64, "ggml-medium.en.bin", false),
+        ("medium-multi", "Medium (Multilingual)", "1.5 GB", 1_500_000_000u64, "ggml-medium.bin", true),
+        ("large", "Large (Multilingual)", "2.9 GB", 2_900_000_000u64, "ggml-large.bin", true),
+    ];
+
+    let base_url = "https://huggingface.co/ggerganov/whisper.cpp/resolve/main";
+
+    // Get whisper models directory
+    let home = std::env::var("HOME")
+        .or_else(|_| std::env::var("USERPROFILE"))
+        .unwrap_or_default();
+    let whisper_dir = PathBuf::from(&home).join(".voiceintelligence").join("whisper");
+
+    models_info
+        .into_iter()
+        .map(|(id, name, size, size_bytes, filename, is_multilingual)| {
+            let download_url = format!("{}/{}", base_url, filename);
+            let model_path = whisper_dir.join(filename);
+            let installed = model_path.exists();
+            let installed_path = if installed {
+                Some(model_path.to_string_lossy().to_string())
+            } else {
+                None
+            };
+
+            WhisperModel {
+                id: id.to_string(),
+                name: name.to_string(),
+                size: size.to_string(),
+                size_bytes,
+                download_url,
+                installed,
+                installed_path,
+                is_multilingual,
+            }
+        })
+        .collect()
+}
+
+/// Progress event for model download
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DownloadProgress {
+    pub model_id: String,
+    pub downloaded: u64,
+    pub total: u64,
+    pub percentage: f32,
+    pub status: String,
+}
+
+/// Result of model download
+#[derive(Debug, Serialize, Deserialize)]
+pub struct DownloadResult {
+    pub success: bool,
+    pub message: String,
+    pub model_path: Option<String>,
+}
+
+/// Download a whisper model with progress tracking
+#[tauri::command]
+pub async fn download_whisper_model(
+    window: Window,
+    model_id: String,
+) -> Result<DownloadResult, String> {
+    // Get model info from available models
+    let models = get_available_models();
+    let model = models
+        .iter()
+        .find(|m| m.id == model_id)
+        .ok_or_else(|| format!("Model '{}' not found", model_id))?;
+
+    // Check if already installed
+    if model.installed {
+        return Ok(DownloadResult {
+            success: true,
+            message: "Model already installed".to_string(),
+            model_path: model.installed_path.clone(),
+        });
+    }
+
+    // Get whisper models directory
+    let home = std::env::var("HOME")
+        .or_else(|_| std::env::var("USERPROFILE"))
+        .map_err(|_| "Could not find home directory")?;
+    let whisper_dir = PathBuf::from(&home).join(".voiceintelligence").join("whisper");
+
+    // Create directory if it doesn't exist
+    if !whisper_dir.exists() {
+        std::fs::create_dir_all(&whisper_dir)
+            .map_err(|e| format!("Failed to create directory: {}", e))?;
+    }
+
+    // Determine model filename from URL
+    let filename = model.download_url
+        .split('/')
+        .last()
+        .ok_or("Invalid download URL")?;
+    let model_path = whisper_dir.join(filename);
+
+    log::info!("Downloading model {} from {}", model_id, model.download_url);
+
+    // Emit initial progress
+    let _ = window.emit("download-progress", DownloadProgress {
+        model_id: model_id.clone(),
+        downloaded: 0,
+        total: model.size_bytes,
+        percentage: 0.0,
+        status: "starting".to_string(),
+    });
+
+    // Create HTTP client and start download
+    let client = reqwest::Client::new();
+    let response = client
+        .get(&model.download_url)
+        .send()
+        .await
+        .map_err(|e| format!("Failed to start download: {}", e))?;
+
+    if !response.status().is_success() {
+        return Err(format!("Download failed with status: {}", response.status()));
+    }
+
+    // Get content length for progress tracking
+    let total_size = response
+        .content_length()
+        .unwrap_or(model.size_bytes);
+
+    // Create temporary file for download
+    let temp_path = model_path.with_extension("bin.tmp");
+    let mut file = std::fs::File::create(&temp_path)
+        .map_err(|e| format!("Failed to create file: {}", e))?;
+
+    // Stream the download with progress updates
+    let mut downloaded: u64 = 0;
+    let mut stream = response.bytes_stream();
+    let mut last_progress_update = std::time::Instant::now();
+
+    while let Some(chunk_result) = stream.next().await {
+        let chunk = chunk_result
+            .map_err(|e| format!("Download error: {}", e))?;
+
+        file.write_all(&chunk)
+            .map_err(|e| format!("Failed to write to file: {}", e))?;
+
+        downloaded += chunk.len() as u64;
+
+        // Emit progress every 100ms to avoid overwhelming the frontend
+        if last_progress_update.elapsed().as_millis() >= 100 {
+            let percentage = (downloaded as f32 / total_size as f32) * 100.0;
+            let _ = window.emit("download-progress", DownloadProgress {
+                model_id: model_id.clone(),
+                downloaded,
+                total: total_size,
+                percentage,
+                status: "downloading".to_string(),
+            });
+            last_progress_update = std::time::Instant::now();
+        }
+    }
+
+    // Flush and close the file
+    file.flush()
+        .map_err(|e| format!("Failed to flush file: {}", e))?;
+    drop(file);
+
+    // Rename temp file to final path
+    std::fs::rename(&temp_path, &model_path)
+        .map_err(|e| format!("Failed to move downloaded file: {}", e))?;
+
+    // Emit completion progress
+    let _ = window.emit("download-progress", DownloadProgress {
+        model_id: model_id.clone(),
+        downloaded: total_size,
+        total: total_size,
+        percentage: 100.0,
+        status: "completed".to_string(),
+    });
+
+    log::info!("Model {} downloaded successfully to {}", model_id, model_path.display());
+
+    Ok(DownloadResult {
+        success: true,
+        message: format!("Model '{}' downloaded successfully", model_id),
+        model_path: Some(model_path.to_string_lossy().to_string()),
+    })
 }
 
 /// Get the path to the whisper model

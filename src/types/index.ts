@@ -9,7 +9,7 @@ export type EnrichmentMode =
   | 'summary'
   | 'custom';
 
-export type OutputTarget = 'clipboard' | 'file' | 'notion' | 'google_drive';
+export type OutputTarget = 'clipboard' | 'file';
 
 export type LLMProvider = 'openai' | 'openrouter';
 
@@ -34,7 +34,6 @@ export interface Settings {
   // API Keys (stored securely)
   openaiApiKey?: string;
   openrouterApiKey?: string;
-  notionApiKey?: string;
   // Microphone
   selectedMicrophone?: string;
   // Whisper
@@ -75,19 +74,56 @@ export interface LLMProviderConfig {
   baseUrl?: string;
 }
 
-export interface NotionSettings {
-  apiKey: string;
-  parentPageId?: string;    // Parent page ID for creating new pages
-  databaseId?: string;      // Database ID if exporting to a database
-  defaultTags?: string[];   // Default tags to apply to created pages
-}
-
 export interface AppState {
   recordingState: RecordingState;
   currentTranscript: string | null;
   enrichedContent: string | null;
   error: string | null;
   isProcessing: boolean;
+}
+
+// Offline Component Types
+
+export type OfflineComponentType = 'whisper-model' | 'language-pack';
+
+export type OfflineComponentStatus = 'not-installed' | 'installed' | 'downloading' | 'updating' | 'error';
+
+export interface OfflineComponent {
+  id: string;
+  name: string;
+  type: OfflineComponentType;
+  size: string;
+  sizeBytes: number;
+  downloadUrl: string;
+  status: OfflineComponentStatus;
+  installedPath?: string;
+  version?: string;
+  description?: string;
+}
+
+export interface WhisperModel {
+  id: string;
+  name: string;
+  size: string;
+  sizeBytes: number;
+  downloadUrl: string;
+  installed: boolean;
+  installedPath?: string;
+  isMultilingual: boolean;
+}
+
+export interface DownloadProgress {
+  modelId: string;
+  downloaded: number;
+  total: number;
+  percentage: number;
+  status: 'starting' | 'downloading' | 'completed' | 'error';
+}
+
+export interface DownloadResult {
+  success: boolean;
+  message: string;
+  modelPath?: string;
 }
 
 // Default settings

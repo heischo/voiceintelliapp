@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
-import type { Settings, EnrichmentMode } from '../types';
+import type { Settings, EnrichmentMode, WhisperModel, DownloadProgress } from '../types';
 import {
   COMMON_HOTKEYS,
   ENRICHMENT_MODES,
@@ -13,7 +13,7 @@ import {
 } from '../lib/config';
 import { MicrophoneSelector } from './MicrophoneSelector';
 import { OPENROUTER_MODELS } from '../providers/openrouter';
-import { getAppVersion } from '../lib/api';
+import { getAppVersion, getAvailableModels, downloadWhisperModel, onDownloadProgress } from '../lib/api';
 
 // OpenAI models
 const OPENAI_MODELS = [
@@ -42,12 +42,10 @@ export function SettingsPanel({ settings, onSave, isLoading, onClose }: Settings
   const [apiKeys, setApiKeys] = useState<Record<string, string>>({
     openai: settings.openaiApiKey || '',
     openrouter: settings.openrouterApiKey || '',
-    notion: settings.notionApiKey || '',
   });
   const [showApiKey, setShowApiKey] = useState<Record<string, boolean>>({
     openai: false,
     openrouter: false,
-    notion: false,
   });
   const [whisperAvailable, setWhisperAvailable] = useState<boolean | null>(null);
   const [whisperPath, setWhisperPath] = useState<string>(settings.whisperPath || '');
@@ -56,6 +54,11 @@ export function SettingsPanel({ settings, onSave, isLoading, onClose }: Settings
   const [isVerifyingPath, setIsVerifyingPath] = useState(false);
   const [pathVerifyResult, setPathVerifyResult] = useState<'success' | 'error' | null>(null);
   const [appVersion, setAppVersion] = useState<string>('');
+  // Offline components state
+  const [availableModels, setAvailableModels] = useState<WhisperModel[]>([]);
+  const [isLoadingModels, setIsLoadingModels] = useState(false);
+  const [downloadingModels, setDownloadingModels] = useState<Record<string, number>>({});
+  const [downloadErrors, setDownloadErrors] = useState<Record<string, string>>({});
 
   // Fetch app version
   useEffect(() => {
@@ -81,6 +84,69 @@ export function SettingsPanel({ settings, onSave, isLoading, onClose }: Settings
   useEffect(() => {
     checkWhisperAvailable();
   }, [checkWhisperAvailable]);
+
+  // Load available models
+  const loadModels = useCallback(async () => {
+    setIsLoadingModels(true);
+    try {
+      const models = await getAvailableModels();
+      setAvailableModels(models);
+    } catch (error) {
+      console.error('Failed to load models:', error);
+    } finally {
+      setIsLoadingModels(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadModels();
+  }, [loadModels]);
+
+  // Listen for download progress events
+  useEffect(() => {
+    let unlisten: (() => void) | undefined;
+
+    onDownloadProgress((progress: DownloadProgress) => {
+      if (progress.status === 'downloading') {
+        setDownloadingModels((prev) => ({
+          ...prev,
+          [progress.modelId]: progress.percentage,
+        }));
+        // Clear any previous error for this model
+        setDownloadErrors((prev) => {
+          const newErrors = { ...prev };
+          delete newErrors[progress.modelId];
+          return newErrors;
+        });
+      } else if (progress.status === 'completed') {
+        setDownloadingModels((prev) => {
+          const newState = { ...prev };
+          delete newState[progress.modelId];
+          return newState;
+        });
+        // Reload models to get updated installed status
+        loadModels();
+      } else if (progress.status === 'error') {
+        setDownloadingModels((prev) => {
+          const newState = { ...prev };
+          delete newState[progress.modelId];
+          return newState;
+        });
+        setDownloadErrors((prev) => ({
+          ...prev,
+          [progress.modelId]: 'Download failed. Please try again.',
+        }));
+      }
+    }).then((fn) => {
+      unlisten = fn;
+    });
+
+    return () => {
+      if (unlisten) {
+        unlisten();
+      }
+    };
+  }, [loadModels]);
 
   const installWhisper = async () => {
     setIsInstallingWhisper(true);
@@ -150,6 +216,47 @@ export function SettingsPanel({ settings, onSave, isLoading, onClose }: Settings
     }
   };
 
+  const handleDownloadModel = async (modelId: string) => {
+    // Clear any previous error
+    setDownloadErrors((prev) => {
+      const newErrors = { ...prev };
+      delete newErrors[modelId];
+      return newErrors;
+    });
+
+    // Set initial progress
+    setDownloadingModels((prev) => ({
+      ...prev,
+      [modelId]: 0,
+    }));
+
+    try {
+      const result = await downloadWhisperModel(modelId);
+      if (!result.success) {
+        setDownloadErrors((prev) => ({
+          ...prev,
+          [modelId]: result.message || 'Download failed. Please try again.',
+        }));
+        setDownloadingModels((prev) => {
+          const newState = { ...prev };
+          delete newState[modelId];
+          return newState;
+        });
+      }
+      // If successful, the download progress listener will handle the rest
+    } catch (error) {
+      setDownloadErrors((prev) => ({
+        ...prev,
+        [modelId]: error instanceof Error ? error.message : 'Download failed. Please try again.',
+      }));
+      setDownloadingModels((prev) => {
+        const newState = { ...prev };
+        delete newState[modelId];
+        return newState;
+      });
+    }
+  };
+
   const handleChange = <K extends keyof Settings>(key: K, value: Settings[K]) => {
     setLocalSettings((prev) => ({ ...prev, [key]: value }));
   };
@@ -165,9 +272,6 @@ export function SettingsPanel({ settings, onSave, isLoading, onClose }: Settings
       }
       if (apiKeys.openrouter) {
         settingsToSave.openrouterApiKey = apiKeys.openrouter;
-      }
-      if (apiKeys.notion) {
-        settingsToSave.notionApiKey = apiKeys.notion;
       }
       await onSave(settingsToSave);
       setSaveSuccess(true);
@@ -530,66 +634,6 @@ export function SettingsPanel({ settings, onSave, isLoading, onClose }: Settings
         </div>
       </section>
 
-      {/* Notion Integration Settings */}
-      <section className="card">
-        <h3 className="text-lg font-semibold text-primary mb-4">Notion Integration</h3>
-        <div className="space-y-4">
-          <div className="p-4 rounded-lg border border-secondary bg-secondary/20">
-            <div className="font-medium text-text mb-2">Setup Instructions</div>
-            <ol className="text-sm text-text-muted space-y-2 list-decimal list-inside">
-              <li>Go to <a href="https://www.notion.so/my-integrations" target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">notion.so/my-integrations</a></li>
-              <li>Click &quot;New integration&quot; and give it a name</li>
-              <li>Copy the &quot;Internal Integration Token&quot;</li>
-              <li>In Notion, share your target page/database with the integration</li>
-            </ol>
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-text mb-2">
-              Notion API Key
-            </label>
-            <div className="relative">
-              <input
-                type={showApiKey.notion ? 'text' : 'password'}
-                value={apiKeys.notion}
-                onChange={(e) =>
-                  setApiKeys((prev) => ({
-                    ...prev,
-                    notion: e.target.value,
-                  }))
-                }
-                placeholder="Enter your Notion integration token (secret_...)"
-                className="input w-full pr-20"
-              />
-              <button
-                type="button"
-                onClick={() =>
-                  setShowApiKey((prev) => ({
-                    ...prev,
-                    notion: !prev.notion,
-                  }))
-                }
-                className="absolute right-2 top-1/2 -translate-y-1/2 px-3 py-1 text-sm text-text-muted hover:text-text"
-              >
-                {showApiKey.notion ? 'Hide' : 'Show'}
-              </button>
-            </div>
-            <p className="text-xs text-text-muted mt-1">
-              Your API key is stored securely in your system keychain
-            </p>
-          </div>
-
-          {apiKeys.notion && (
-            <div className="flex items-center gap-2 text-sm">
-              <svg className="w-4 h-4 text-success" fill="currentColor" viewBox="0 0 20 20">
-                <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
-              </svg>
-              <span className="text-text-muted">Notion integration configured</span>
-            </div>
-          )}
-        </div>
-      </section>
-
       {/* Language Settings */}
       <section className="card">
         <h3 className="text-lg font-semibold text-primary mb-4">Language</h3>
@@ -659,6 +703,136 @@ export function SettingsPanel({ settings, onSave, isLoading, onClose }: Settings
                   ${localSettings.showNotifications ? 'translate-x-6' : ''}`}
               />
             </button>
+          </div>
+        </div>
+      </section>
+
+      {/* Offline Components Section */}
+      <section className="card">
+        <h3 className="text-lg font-semibold text-primary mb-4">Offline Components</h3>
+        <div className="space-y-4">
+          <p className="text-sm text-text-muted">
+            Download whisper models for local, private transcription. Larger models are more accurate but slower.
+          </p>
+
+          {isLoadingModels ? (
+            <div className="flex items-center justify-center py-8">
+              <svg className="animate-spin h-6 w-6 text-primary" viewBox="0 0 24 24">
+                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
+                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+              </svg>
+              <span className="ml-2 text-text-muted">Loading models...</span>
+            </div>
+          ) : availableModels.length === 0 ? (
+            <div className="text-center py-8 text-text-muted">
+              <p>No models available. Please ensure whisper.cpp is installed.</p>
+              <button
+                onClick={loadModels}
+                className="btn-secondary mt-4 text-sm py-2 px-4"
+              >
+                Retry
+              </button>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {availableModels.map((model) => {
+                const isDownloading = model.id in downloadingModels;
+                const downloadProgress = downloadingModels[model.id] || 0;
+                const hasError = model.id in downloadErrors;
+
+                return (
+                  <div
+                    key={model.id}
+                    className={`p-4 rounded-lg border ${
+                      model.installed ? 'border-success bg-success/10' : 'border-secondary'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between">
+                      <div className="flex-1">
+                        <div className="flex items-center gap-2">
+                          <span className="font-medium text-text">{model.name}</span>
+                          {model.installed && (
+                            <span className="text-xs bg-success text-black px-2 py-0.5 rounded">
+                              Installed
+                            </span>
+                          )}
+                          {model.isMultilingual && (
+                            <span className="text-xs bg-primary/20 text-primary px-2 py-0.5 rounded">
+                              Multilingual
+                            </span>
+                          )}
+                        </div>
+                        <div className="text-sm text-text-muted mt-1">
+                          Size: {model.size}
+                        </div>
+                        {model.installed && model.installedPath && (
+                          <div className="text-xs text-text-muted bg-secondary/50 rounded p-2 mt-2 font-mono break-all">
+                            {model.installedPath}
+                          </div>
+                        )}
+                      </div>
+
+                      <div className="ml-4">
+                        {isDownloading ? (
+                          <div className="flex flex-col items-end">
+                            <div className="w-32 h-2 bg-secondary rounded-full overflow-hidden">
+                              <div
+                                className="h-full bg-primary transition-all duration-300"
+                                style={{ width: `${downloadProgress}%` }}
+                              />
+                            </div>
+                            <span className="text-xs text-text-muted mt-1">
+                              {downloadProgress.toFixed(0)}%
+                            </span>
+                          </div>
+                        ) : model.installed ? (
+                          <span className="text-success text-sm flex items-center gap-1">
+                            <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                              <path
+                                fillRule="evenodd"
+                                d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z"
+                                clipRule="evenodd"
+                              />
+                            </svg>
+                            Ready
+                          </span>
+                        ) : (
+                          <button
+                            onClick={() => handleDownloadModel(model.id)}
+                            className="btn-secondary text-sm py-2 px-4"
+                          >
+                            Download
+                          </button>
+                        )}
+                      </div>
+                    </div>
+
+                    {hasError && (
+                      <div className="mt-2 text-error text-sm flex items-center gap-1">
+                        <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                          <path
+                            fillRule="evenodd"
+                            d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z"
+                            clipRule="evenodd"
+                          />
+                        </svg>
+                        {downloadErrors[model.id]}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
+          <div className="p-4 rounded-lg border border-secondary bg-secondary/30">
+            <div className="font-medium text-text mb-2">Model Recommendations</div>
+            <ul className="text-sm text-text-muted space-y-1">
+              <li>• <strong>Tiny/Base:</strong> Fast, good for quick notes and short recordings</li>
+              <li>• <strong>Small:</strong> Balanced speed and accuracy for most use cases</li>
+              <li>• <strong>Medium:</strong> Higher accuracy, good for important recordings</li>
+              <li>• <strong>Large:</strong> Best accuracy, requires more memory and processing time</li>
+            </ul>
           </div>
         </div>
       </section>

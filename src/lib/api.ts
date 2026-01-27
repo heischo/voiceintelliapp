@@ -6,13 +6,8 @@ import { writeText, readText } from '@tauri-apps/plugin-clipboard-manager';
 import { register, unregister, isRegistered } from '@tauri-apps/plugin-global-shortcut';
 import { Store } from '@tauri-apps/plugin-store';
 import { save } from '@tauri-apps/plugin-dialog';
-import { writeTextFile, writeFile, readTextFile, exists, mkdir, BaseDirectory } from '@tauri-apps/plugin-fs';
-import type { Settings, NotionSettings } from '../types';
-import { generatePdf, pdfBlobToUint8Array, type PdfGenerateOptions, PdfError } from './pdf';
-import { createPage, NotionError, type CreatePageOptions, type CreatePageResult } from './notion';
-
-// Re-export Notion types for consumers
-export { NotionError, type CreatePageResult } from './notion';
+import { writeTextFile, readTextFile, exists, mkdir, BaseDirectory } from '@tauri-apps/plugin-fs';
+import type { Settings, WhisperModel, DownloadProgress, DownloadResult } from '../types';
 
 // Store instance for non-sensitive settings
 let store: Store | null = null;
@@ -88,82 +83,12 @@ export async function isHotkeyRegistered(shortcut: string): Promise<boolean> {
 // Clipboard Operations
 // ============================================
 
-/**
- * Extracts a type-safe error message from an unknown error
- */
-function getErrorMessage(error: unknown): string {
-  if (error instanceof Error) {
-    return error.message;
-  }
-  if (typeof error === 'string') {
-    return error;
-  }
-  if (error && typeof error === 'object' && 'message' in error) {
-    return String((error as { message: unknown }).message);
-  }
-  return 'Unknown error occurred';
-}
-
-/**
- * Custom error class for clipboard operations
- */
-export class ClipboardError extends Error {
-  constructor(
-    message: string,
-    public readonly cause?: unknown
-  ) {
-    super(message);
-    this.name = 'ClipboardError';
-  }
-}
-
 export async function copyToClipboard(text: string): Promise<void> {
-  // Validate input
-  if (text === null || text === undefined) {
-    throw new ClipboardError('Cannot copy null or undefined to clipboard');
-  }
-
-  if (typeof text !== 'string') {
-    throw new ClipboardError('Clipboard content must be a string');
-  }
-
-  // Allow empty strings but log a warning
-  if (text.length === 0) {
-    console.warn('Copying empty string to clipboard');
-  }
-
   try {
     await writeText(text);
   } catch (error) {
-    const errorMessage = getErrorMessage(error);
-
-    // Provide user-friendly error messages for common clipboard failures
-    if (errorMessage.toLowerCase().includes('permission')) {
-      throw new ClipboardError(
-        'Clipboard access denied. Please check your system permissions.',
-        error
-      );
-    }
-
-    if (errorMessage.toLowerCase().includes('focus') || errorMessage.toLowerCase().includes('document')) {
-      throw new ClipboardError(
-        'Cannot access clipboard. Please ensure the application window is focused.',
-        error
-      );
-    }
-
-    if (errorMessage.toLowerCase().includes('not supported') || errorMessage.toLowerCase().includes('unavailable')) {
-      throw new ClipboardError(
-        'Clipboard is not available on this system.',
-        error
-      );
-    }
-
-    // Re-throw with enhanced context
-    throw new ClipboardError(
-      `Failed to copy to clipboard: ${errorMessage}`,
-      error
-    );
+    console.error('Failed to copy to clipboard:', error);
+    throw error;
   }
 }
 
@@ -206,39 +131,6 @@ export async function saveToFile(
   }
 }
 
-export async function saveAsPdf(
-  content: string,
-  options?: PdfGenerateOptions
-): Promise<string | null> {
-  try {
-    // Generate the PDF
-    const pdfResult = await generatePdf(content, options);
-
-    // Show save dialog with PDF filter
-    const filePath = await save({
-      defaultPath: pdfResult.filename,
-      filters: [
-        { name: 'PDF Documents', extensions: ['pdf'] },
-      ],
-    });
-
-    if (filePath) {
-      // Convert blob to Uint8Array for binary file writing
-      const pdfData = await pdfBlobToUint8Array(pdfResult.blob);
-      await writeFile(filePath, pdfData);
-      return filePath;
-    }
-    return null;
-  } catch (error) {
-    // Re-throw PdfError as-is for better error context
-    if (error instanceof PdfError) {
-      throw error;
-    }
-    console.error('Failed to save PDF:', error);
-    throw error;
-  }
-}
-
 export async function saveToAppData(
   filename: string,
   content: string
@@ -268,66 +160,6 @@ export async function readFromAppData(filename: string): Promise<string | null> 
   } catch (error) {
     console.error('Failed to read from app data:', error);
     return null;
-  }
-}
-
-// ============================================
-// Notion Export
-// ============================================
-
-export interface ExportToNotionOptions {
-  title?: string;
-  content: string;
-  tags?: string[];
-}
-
-export async function exportToNotion(
-  settings: NotionSettings,
-  options: ExportToNotionOptions
-): Promise<CreatePageResult> {
-  // Validate required settings
-  if (!settings.apiKey) {
-    throw new NotionError({
-      code: 'NOT_CONFIGURED',
-      message: 'Notion API key is not configured. Please add your API key in Settings.',
-      retryable: false,
-    });
-  }
-
-  // Validate content
-  if (!options.content || options.content.trim().length === 0) {
-    throw new NotionError({
-      code: 'VALIDATION_ERROR',
-      message: 'Cannot export empty content to Notion.',
-      retryable: false,
-    });
-  }
-
-  try {
-    const pageOptions: CreatePageOptions = {
-      title: options.title || `Transcript - ${new Date().toLocaleString()}`,
-      content: options.content,
-      parentPageId: settings.parentPageId,
-      databaseId: settings.databaseId,
-      tags: options.tags,
-    };
-
-    const result = await createPage(settings, pageOptions);
-    return result;
-  } catch (error) {
-    // Re-throw NotionError as-is for better error context
-    if (error instanceof NotionError) {
-      throw error;
-    }
-
-    // Wrap unexpected errors
-    console.error('Failed to export to Notion:', error);
-    throw new NotionError({
-      code: 'API_ERROR',
-      message: `Failed to export to Notion: ${getErrorMessage(error)}`,
-      retryable: true,
-      cause: error,
-    });
   }
 }
 
@@ -481,4 +313,46 @@ export async function cleanupOldHistory(retentionDays: number): Promise<void> {
   } catch (error) {
     console.error('Failed to cleanup old history:', error);
   }
+}
+
+// ============================================
+// Offline Components / Model Management
+// ============================================
+
+export async function getAvailableModels(): Promise<WhisperModel[]> {
+  try {
+    return await invoke<WhisperModel[]>('get_available_models');
+  } catch (error) {
+    console.error('Failed to get available models:', error);
+    return [];
+  }
+}
+
+export async function downloadWhisperModel(modelId: string): Promise<DownloadResult> {
+  try {
+    return await invoke<DownloadResult>('download_whisper_model', { modelId });
+  } catch (error) {
+    console.error('Failed to download whisper model:', error);
+    return {
+      success: false,
+      message: error instanceof Error ? error.message : 'Unknown error occurred',
+    };
+  }
+}
+
+export async function deleteWhisperModel(modelId: string): Promise<boolean> {
+  try {
+    return await invoke<boolean>('delete_whisper_model', { modelId });
+  } catch (error) {
+    console.error('Failed to delete whisper model:', error);
+    return false;
+  }
+}
+
+export async function onDownloadProgress(
+  callback: (progress: DownloadProgress) => void
+): Promise<UnlistenFn> {
+  return listen<DownloadProgress>('download-progress', (event) => {
+    callback(event.payload);
+  });
 }

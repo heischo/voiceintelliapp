@@ -78,6 +78,8 @@ pub fn run() {
             commands::verify_whisper_path,
             commands::transcribe_audio,
             commands::install_whisper,
+            commands::get_available_models,
+            commands::download_whisper_model,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
