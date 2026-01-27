@@ -56,3 +56,56 @@ export class LLMProviderError extends Error {
     this.retryable = error.retryable;
   }
 }
+
+// OLLAMA-specific types
+
+/**
+ * Represents an OLLAMA model from the /api/tags endpoint
+ */
+export interface OllamaModel {
+  name: string;
+  model: string;
+  modifiedAt: string;
+  size: number;
+  digest: string;
+  details: {
+    parentModel: string;
+    format: string;
+    family: string;
+    families: string[] | null;
+    parameterSize: string;
+    quantizationLevel: string;
+  };
+}
+
+/**
+ * Service status returned from check_ollama_available command
+ * Mirrors Rust OllamaCheckResult struct
+ */
+export interface OllamaServiceStatus {
+  available: boolean;
+  version: string | null;
+  baseUrl: string;
+}
+
+/**
+ * Configuration settings for OLLAMA provider
+ */
+export interface OllamaSettings {
+  baseUrl: string;
+  model: string;
+  temperature?: number;
+  contextLength?: number;
+}
+
+/**
+ * Progress information for OLLAMA model pull operations
+ */
+export interface OllamaPullProgress {
+  modelId: string;
+  status: string;
+  digest?: string;
+  total?: number;
+  completed?: number;
+  percentage: number;
+}
