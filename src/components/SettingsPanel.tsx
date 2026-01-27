@@ -13,7 +13,8 @@ import {
 } from '../lib/config';
 import { MicrophoneSelector } from './MicrophoneSelector';
 import { OPENROUTER_MODELS } from '../providers/openrouter';
-import { getAppVersion, getAvailableModels, downloadWhisperModel, onDownloadProgress } from '../lib/api';
+import { getAppVersion, getAvailableModels, downloadWhisperModel, onDownloadProgress, checkOllamaAvailable, getOllamaModels } from '../lib/api';
+import type { OllamaServiceStatus, OllamaModel } from '../types/llm';
 
 // OpenAI models
 const OPENAI_MODELS = [
@@ -60,6 +61,11 @@ export function SettingsPanel({ settings, onSave, isLoading, onClose }: Settings
   const [downloadingModels, setDownloadingModels] = useState<Record<string, number>>({});
   const [downloadErrors, setDownloadErrors] = useState<Record<string, string>>({});
 
+  // OLLAMA state
+  const [ollamaStatus, setOllamaStatus] = useState<OllamaServiceStatus | null>(null);
+  const [ollamaModels, setOllamaModels] = useState<OllamaModel[]>([]);
+  const [isLoadingOllama, setIsLoadingOllama] = useState(false);
+
   // Fetch app version
   useEffect(() => {
     getAppVersion().then(setAppVersion);
@@ -101,6 +107,31 @@ export function SettingsPanel({ settings, onSave, isLoading, onClose }: Settings
   useEffect(() => {
     loadModels();
   }, [loadModels]);
+
+  // Check OLLAMA availability and load models
+  const checkOllamaStatus = useCallback(async () => {
+    setIsLoadingOllama(true);
+    try {
+      const status = await checkOllamaAvailable();
+      setOllamaStatus(status);
+      if (status.available) {
+        const models = await getOllamaModels();
+        setOllamaModels(models);
+      } else {
+        setOllamaModels([]);
+      }
+    } catch (error) {
+      console.error('Failed to check OLLAMA status:', error);
+      setOllamaStatus({ available: false, version: null, baseUrl: 'http://localhost:11434' });
+      setOllamaModels([]);
+    } finally {
+      setIsLoadingOllama(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    checkOllamaStatus();
+  }, [checkOllamaStatus]);
 
   // Listen for download progress events
   useEffect(() => {
@@ -472,15 +503,22 @@ export function SettingsPanel({ settings, onSave, isLoading, onClose }: Settings
             <label className="block text-sm font-medium text-text mb-2">
               Provider
             </label>
-            <div className="grid grid-cols-2 gap-2">
+            <div className="grid grid-cols-3 gap-2">
               {LLM_PROVIDERS.map((provider) => (
                 <button
                   key={provider.value}
                   onClick={() => {
                     handleChange('llmProvider', provider.value);
                     // Set default model for the provider
-                    const defaultModel = provider.value === 'openai' ? 'gpt-4o-mini' : 'openai/gpt-4o-mini';
-                    handleChange('llmModel', defaultModel);
+                    if (provider.value === 'openai') {
+                      handleChange('llmModel', 'gpt-4o-mini');
+                    } else if (provider.value === 'openrouter') {
+                      handleChange('llmModel', 'openai/gpt-4o-mini');
+                    } else if (provider.value === 'ollama') {
+                      // Set first available OLLAMA model, or empty if none
+                      const defaultOllamaModel = ollamaModels.length > 0 ? ollamaModels[0].name : '';
+                      handleChange('ollamaModel', defaultOllamaModel);
+                    }
                   }}
                   className={`p-3 rounded-lg border text-left transition-all
                     ${localSettings.llmProvider === provider.value
@@ -488,78 +526,198 @@ export function SettingsPanel({ settings, onSave, isLoading, onClose }: Settings
                       : 'border-secondary hover:border-primary/50'
                     }`}
                 >
-                  <div className="font-medium text-text">{provider.label}</div>
+                  <div className="flex items-center gap-2">
+                    <span className="font-medium text-text">{provider.label}</span>
+                    {provider.value === 'ollama' && ollamaStatus && (
+                      <span className={`text-xs px-2 py-0.5 rounded ${
+                        ollamaStatus.available
+                          ? 'bg-success text-black'
+                          : 'bg-error/20 text-error'
+                      }`}>
+                        {ollamaStatus.available ? 'Running' : 'Not Running'}
+                      </span>
+                    )}
+                    {provider.value === 'ollama' && isLoadingOllama && (
+                      <svg className="animate-spin h-3 w-3 text-text-muted" viewBox="0 0 24 24">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                      </svg>
+                    )}
+                  </div>
                   <div className="text-xs text-text-muted">{provider.description}</div>
                 </button>
               ))}
             </div>
           </div>
 
-          {/* API Key Input */}
-          <div>
-            <label className="block text-sm font-medium text-text mb-2">
-              {localSettings.llmProvider === 'openai' ? 'OpenAI' : 'OpenRouter'} API Key
-            </label>
-            <div className="relative">
-              <input
-                type={showApiKey[localSettings.llmProvider] ? 'text' : 'password'}
-                value={apiKeys[localSettings.llmProvider]}
-                onChange={(e) =>
-                  setApiKeys((prev) => ({
-                    ...prev,
-                    [localSettings.llmProvider]: e.target.value,
-                  }))
-                }
-                placeholder={`Enter your ${localSettings.llmProvider === 'openai' ? 'OpenAI' : 'OpenRouter'} API key`}
-                className="input w-full pr-20"
-              />
-              <button
-                type="button"
-                onClick={() =>
-                  setShowApiKey((prev) => ({
-                    ...prev,
-                    [localSettings.llmProvider]: !prev[localSettings.llmProvider],
-                  }))
-                }
-                className="absolute right-2 top-1/2 -translate-y-1/2 px-3 py-1 text-sm text-text-muted hover:text-text"
-              >
-                {showApiKey[localSettings.llmProvider] ? 'Hide' : 'Show'}
-              </button>
+          {/* OLLAMA Status Section - shown when OLLAMA is selected */}
+          {localSettings.llmProvider === 'ollama' && (
+            <div className={`p-4 rounded-lg border ${
+              ollamaStatus?.available ? 'border-success bg-success/10' : 'border-secondary'
+            }`}>
+              <div className="flex items-center justify-between mb-2">
+                <div className="flex items-center gap-2">
+                  <span className="font-medium text-text">Ollama Service</span>
+                  {isLoadingOllama ? (
+                    <span className="text-xs text-text-muted flex items-center gap-1">
+                      <svg className="animate-spin h-3 w-3" viewBox="0 0 24 24">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                      </svg>
+                      Checking...
+                    </span>
+                  ) : ollamaStatus?.available ? (
+                    <span className="text-xs bg-success text-black px-2 py-0.5 rounded flex items-center gap-1">
+                      <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
+                        <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+                      </svg>
+                      Running {ollamaStatus.version ? `v${ollamaStatus.version}` : ''}
+                    </span>
+                  ) : (
+                    <span className="text-xs bg-error/20 text-error px-2 py-0.5 rounded flex items-center gap-1">
+                      <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
+                        <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
+                      </svg>
+                      Not Running
+                    </span>
+                  )}
+                </div>
+                <button
+                  onClick={checkOllamaStatus}
+                  disabled={isLoadingOllama}
+                  className="btn-secondary text-xs py-1 px-3"
+                >
+                  Refresh
+                </button>
+              </div>
+
+              {ollamaStatus?.available ? (
+                <p className="text-sm text-text-muted">
+                  Ollama is running at {ollamaStatus.baseUrl}. Select a model below for local, private text enrichment.
+                </p>
+              ) : (
+                <div className="space-y-3">
+                  <p className="text-sm text-text-muted">
+                    Ollama is not running. Start the Ollama service to use local LLM models for privacy-first enrichment.
+                  </p>
+                  <div className="p-3 rounded-lg bg-secondary/50">
+                    <p className="text-sm font-medium text-text mb-2">To get started:</p>
+                    <ol className="text-sm text-text-muted space-y-1 list-decimal list-inside">
+                      <li>Download and install Ollama from <a href="https://ollama.ai" target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">ollama.ai</a></li>
+                      <li>Run <code className="bg-secondary px-1 rounded">ollama serve</code> in your terminal</li>
+                      <li>Pull a model: <code className="bg-secondary px-1 rounded">ollama pull llama3.2</code></li>
+                      <li>Click Refresh above to detect the running service</li>
+                    </ol>
+                  </div>
+                </div>
+              )}
             </div>
-            <p className="text-xs text-text-muted mt-1">
-              Your API key is stored securely in your system keychain
-            </p>
-          </div>
+          )}
+
+          {/* API Key Input - hidden for OLLAMA */}
+          {localSettings.llmProvider !== 'ollama' && (
+            <div>
+              <label className="block text-sm font-medium text-text mb-2">
+                {localSettings.llmProvider === 'openai' ? 'OpenAI' : 'OpenRouter'} API Key
+              </label>
+              <div className="relative">
+                <input
+                  type={showApiKey[localSettings.llmProvider] ? 'text' : 'password'}
+                  value={apiKeys[localSettings.llmProvider]}
+                  onChange={(e) =>
+                    setApiKeys((prev) => ({
+                      ...prev,
+                      [localSettings.llmProvider]: e.target.value,
+                    }))
+                  }
+                  placeholder={`Enter your ${localSettings.llmProvider === 'openai' ? 'OpenAI' : 'OpenRouter'} API key`}
+                  className="input w-full pr-20"
+                />
+                <button
+                  type="button"
+                  onClick={() =>
+                    setShowApiKey((prev) => ({
+                      ...prev,
+                      [localSettings.llmProvider]: !prev[localSettings.llmProvider],
+                    }))
+                  }
+                  className="absolute right-2 top-1/2 -translate-y-1/2 px-3 py-1 text-sm text-text-muted hover:text-text"
+                >
+                  {showApiKey[localSettings.llmProvider] ? 'Hide' : 'Show'}
+                </button>
+              </div>
+              <p className="text-xs text-text-muted mt-1">
+                Your API key is stored securely in your system keychain
+              </p>
+            </div>
+          )}
 
           {/* Model Selection */}
           <div>
             <label className="block text-sm font-medium text-text mb-2">
               Model
             </label>
-            <select
-              value={localSettings.llmModel || (localSettings.llmProvider === 'openai' ? 'gpt-4o-mini' : 'openai/gpt-4o-mini')}
-              onChange={(e) => handleChange('llmModel', e.target.value)}
-              className="input w-full"
-            >
-              {localSettings.llmProvider === 'openai' ? (
-                OPENAI_MODELS.map((model) => (
-                  <option key={model.id} value={model.id}>
-                    {model.name} - {model.description}
-                  </option>
-                ))
+            {localSettings.llmProvider === 'ollama' ? (
+              ollamaStatus?.available ? (
+                ollamaModels.length > 0 ? (
+                  <>
+                    <select
+                      value={localSettings.ollamaModel || (ollamaModels.length > 0 ? ollamaModels[0].name : '')}
+                      onChange={(e) => handleChange('ollamaModel', e.target.value)}
+                      className="input w-full"
+                    >
+                      {ollamaModels.map((model) => (
+                        <option key={model.name} value={model.name}>
+                          {model.name} ({(model.size / (1024 * 1024 * 1024)).toFixed(1)} GB)
+                        </option>
+                      ))}
+                    </select>
+                    <p className="text-xs text-text-muted mt-1">
+                      {ollamaModels.length} model{ollamaModels.length !== 1 ? 's' : ''} installed locally
+                    </p>
+                  </>
+                ) : (
+                  <div className="p-3 rounded-lg border border-secondary bg-secondary/30">
+                    <p className="text-sm text-text-muted">
+                      No models installed. Pull a model using: <code className="bg-secondary px-1 rounded">ollama pull llama3.2</code>
+                    </p>
+                  </div>
+                )
               ) : (
-                OPENROUTER_MODELS.map((model) => (
-                  <option key={model.id} value={model.id}>
-                    {model.name} - {model.description}
-                  </option>
-                ))
-              )}
-            </select>
-            <p className="text-xs text-text-muted mt-1">
-              {localSettings.llmProvider === 'openrouter'
-                ? 'OpenRouter provides access to many AI models'
-                : 'Choose the OpenAI model for text enrichment'}
-            </p>
+                <div className="p-3 rounded-lg border border-secondary bg-secondary/30">
+                  <p className="text-sm text-text-muted">
+                    Start Ollama to see available models
+                  </p>
+                </div>
+              )
+            ) : (
+              <>
+                <select
+                  value={localSettings.llmModel || (localSettings.llmProvider === 'openai' ? 'gpt-4o-mini' : 'openai/gpt-4o-mini')}
+                  onChange={(e) => handleChange('llmModel', e.target.value)}
+                  className="input w-full"
+                >
+                  {localSettings.llmProvider === 'openai' ? (
+                    OPENAI_MODELS.map((model) => (
+                      <option key={model.id} value={model.id}>
+                        {model.name} - {model.description}
+                      </option>
+                    ))
+                  ) : (
+                    OPENROUTER_MODELS.map((model) => (
+                      <option key={model.id} value={model.id}>
+                        {model.name} - {model.description}
+                      </option>
+                    ))
+                  )}
+                </select>
+                <p className="text-xs text-text-muted mt-1">
+                  {localSettings.llmProvider === 'openrouter'
+                    ? 'OpenRouter provides access to many AI models'
+                    : 'Choose the OpenAI model for text enrichment'}
+                </p>
+              </>
+            )}
           </div>
         </div>
       </section>

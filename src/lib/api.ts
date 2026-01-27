@@ -8,6 +8,7 @@ import { Store } from '@tauri-apps/plugin-store';
 import { save } from '@tauri-apps/plugin-dialog';
 import { writeTextFile, readTextFile, exists, mkdir, BaseDirectory } from '@tauri-apps/plugin-fs';
 import type { Settings, WhisperModel, DownloadProgress, DownloadResult } from '../types';
+import type { OllamaServiceStatus, OllamaModel, OllamaPullProgress } from '../types/llm';
 
 // Store instance for non-sensitive settings
 let store: Store | null = null;
@@ -353,6 +354,63 @@ export async function onDownloadProgress(
   callback: (progress: DownloadProgress) => void
 ): Promise<UnlistenFn> {
   return listen<DownloadProgress>('download-progress', (event) => {
+    callback(event.payload);
+  });
+}
+
+// ============================================
+// OLLAMA Management
+// ============================================
+
+export async function checkOllamaAvailable(): Promise<OllamaServiceStatus> {
+  try {
+    return await invoke<OllamaServiceStatus>('check_ollama_available');
+  } catch (error) {
+    console.error('Failed to check OLLAMA availability:', error);
+    return {
+      available: false,
+      version: null,
+      baseUrl: 'http://localhost:11434',
+    };
+  }
+}
+
+export async function getOllamaModels(): Promise<OllamaModel[]> {
+  try {
+    const result = await invoke<{ models: OllamaModel[] }>('get_ollama_models');
+    return result.models || [];
+  } catch (error) {
+    console.error('Failed to get OLLAMA models:', error);
+    return [];
+  }
+}
+
+export async function pullOllamaModel(modelName: string): Promise<{ success: boolean; message?: string }> {
+  try {
+    return await invoke<{ success: boolean; message?: string }>('pull_ollama_model', { modelName });
+  } catch (error) {
+    console.error('Failed to pull OLLAMA model:', error);
+    return {
+      success: false,
+      message: error instanceof Error ? error.message : 'Unknown error occurred',
+    };
+  }
+}
+
+export async function deleteOllamaModel(modelName: string): Promise<boolean> {
+  try {
+    const result = await invoke<{ success: boolean }>('delete_ollama_model', { modelName });
+    return result.success;
+  } catch (error) {
+    console.error('Failed to delete OLLAMA model:', error);
+    return false;
+  }
+}
+
+export async function onOllamaPullProgress(
+  callback: (progress: OllamaPullProgress) => void
+): Promise<UnlistenFn> {
+  return listen<OllamaPullProgress>('ollama-pull-progress', (event) => {
     callback(event.payload);
   });
 }
