@@ -34,6 +34,7 @@ export interface Settings {
   // API Keys (stored securely)
   openaiApiKey?: string;
   openrouterApiKey?: string;
+  notionApiKey?: string;
   // Microphone
   selectedMicrophone?: string;
   // Whisper
