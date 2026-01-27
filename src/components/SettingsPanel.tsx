@@ -646,6 +646,12 @@ export function SettingsPanel({ settings, onSave, isLoading, onClose }: Settings
                 </button>
               ))}
             </div>
+            <p className="text-xs text-text-muted mt-2 flex items-center gap-2">
+              <span className="inline-flex items-center px-2 py-0.5 rounded bg-secondary text-text-muted">
+                More coming soon
+              </span>
+              <span>Additional LLM providers will be added in future updates</span>
+            </p>
           </div>
 
           {/* OLLAMA Status Section - shown when OLLAMA is selected */}
