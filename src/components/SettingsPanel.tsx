@@ -13,8 +13,8 @@ import {
 } from '../lib/config';
 import { MicrophoneSelector } from './MicrophoneSelector';
 import { OPENROUTER_MODELS } from '../providers/openrouter';
-import { getAppVersion, getAvailableModels, downloadWhisperModel, onDownloadProgress, checkOllamaAvailable, getOllamaModels } from '../lib/api';
-import type { OllamaServiceStatus, OllamaModel } from '../types/llm';
+import { getAppVersion, getAvailableModels, downloadWhisperModel, onDownloadProgress, checkOllamaAvailable, getOllamaModels, pullOllamaModel, onOllamaPullProgress } from '../lib/api';
+import type { OllamaServiceStatus, OllamaModel, OllamaPullProgress } from '../types/llm';
 
 // OpenAI models
 const OPENAI_MODELS = [
@@ -65,6 +65,11 @@ export function SettingsPanel({ settings, onSave, isLoading, onClose }: Settings
   const [ollamaStatus, setOllamaStatus] = useState<OllamaServiceStatus | null>(null);
   const [ollamaModels, setOllamaModels] = useState<OllamaModel[]>([]);
   const [isLoadingOllama, setIsLoadingOllama] = useState(false);
+
+  // OLLAMA model pull state
+  const [ollamaPullModelName, setOllamaPullModelName] = useState<string>('');
+  const [ollamaPullingModels, setOllamaPullingModels] = useState<Record<string, number>>({});
+  const [ollamaPullErrors, setOllamaPullErrors] = useState<Record<string, string>>({});
 
   // Fetch app version
   useEffect(() => {
@@ -179,6 +184,54 @@ export function SettingsPanel({ settings, onSave, isLoading, onClose }: Settings
     };
   }, [loadModels]);
 
+  // Listen for OLLAMA pull progress events
+  useEffect(() => {
+    let unlisten: (() => void) | undefined;
+
+    onOllamaPullProgress((progress: OllamaPullProgress) => {
+      if (progress.status === 'downloading' || progress.status === 'pulling') {
+        setOllamaPullingModels((prev) => ({
+          ...prev,
+          [progress.modelId]: progress.percentage,
+        }));
+        // Clear any previous error for this model
+        setOllamaPullErrors((prev) => {
+          const newErrors = { ...prev };
+          delete newErrors[progress.modelId];
+          return newErrors;
+        });
+      } else if (progress.status === 'success' || progress.status === 'completed') {
+        setOllamaPullingModels((prev) => {
+          const newState = { ...prev };
+          delete newState[progress.modelId];
+          return newState;
+        });
+        // Clear model name input on success
+        setOllamaPullModelName('');
+        // Reload OLLAMA models to get updated list
+        checkOllamaStatus();
+      } else if (progress.status === 'error') {
+        setOllamaPullingModels((prev) => {
+          const newState = { ...prev };
+          delete newState[progress.modelId];
+          return newState;
+        });
+        setOllamaPullErrors((prev) => ({
+          ...prev,
+          [progress.modelId]: 'Pull failed. Please try again.',
+        }));
+      }
+    }).then((fn) => {
+      unlisten = fn;
+    });
+
+    return () => {
+      if (unlisten) {
+        unlisten();
+      }
+    };
+  }, [checkOllamaStatus]);
+
   const installWhisper = async () => {
     setIsInstallingWhisper(true);
     setWhisperInstallStatus('Downloading whisper.cpp...');
@@ -283,6 +336,51 @@ export function SettingsPanel({ settings, onSave, isLoading, onClose }: Settings
       setDownloadingModels((prev) => {
         const newState = { ...prev };
         delete newState[modelId];
+        return newState;
+      });
+    }
+  };
+
+  const handlePullOllamaModel = async (modelName: string) => {
+    if (!modelName.trim()) return;
+
+    const normalizedName = modelName.trim().toLowerCase();
+
+    // Clear any previous error
+    setOllamaPullErrors((prev) => {
+      const newErrors = { ...prev };
+      delete newErrors[normalizedName];
+      return newErrors;
+    });
+
+    // Set initial progress
+    setOllamaPullingModels((prev) => ({
+      ...prev,
+      [normalizedName]: 0,
+    }));
+
+    try {
+      const result = await pullOllamaModel(normalizedName);
+      if (!result.success) {
+        setOllamaPullErrors((prev) => ({
+          ...prev,
+          [normalizedName]: result.message || 'Pull failed. Please try again.',
+        }));
+        setOllamaPullingModels((prev) => {
+          const newState = { ...prev };
+          delete newState[normalizedName];
+          return newState;
+        });
+      }
+      // If successful, the pull progress listener will handle the rest
+    } catch (error) {
+      setOllamaPullErrors((prev) => ({
+        ...prev,
+        [normalizedName]: error instanceof Error ? error.message : 'Pull failed. Please try again.',
+      }));
+      setOllamaPullingModels((prev) => {
+        const newState = { ...prev };
+        delete newState[normalizedName];
         return newState;
       });
     }
@@ -592,9 +690,73 @@ export function SettingsPanel({ settings, onSave, isLoading, onClose }: Settings
               </div>
 
               {ollamaStatus?.available ? (
-                <p className="text-sm text-text-muted">
-                  Ollama is running at {ollamaStatus.baseUrl}. Select a model below for local, private text enrichment.
-                </p>
+                <>
+                  <p className="text-sm text-text-muted mb-4">
+                    Ollama is running at {ollamaStatus.baseUrl}. Select a model below for local, private text enrichment.
+                  </p>
+
+                  {/* Pull Model Section */}
+                  <div className="mt-4 p-3 rounded-lg bg-secondary/30 border border-secondary">
+                    <label className="block text-sm font-medium text-text mb-2">
+                      Pull New Model
+                    </label>
+                    <div className="flex gap-2">
+                      <input
+                        type="text"
+                        value={ollamaPullModelName}
+                        onChange={(e) => setOllamaPullModelName(e.target.value)}
+                        placeholder="e.g., llama3.2, mistral, gemma2..."
+                        className="input flex-1 text-sm"
+                        disabled={Object.keys(ollamaPullingModels).length > 0}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter' && ollamaPullModelName.trim()) {
+                            handlePullOllamaModel(ollamaPullModelName);
+                          }
+                        }}
+                      />
+                      <button
+                        onClick={() => handlePullOllamaModel(ollamaPullModelName)}
+                        disabled={!ollamaPullModelName.trim() || Object.keys(ollamaPullingModels).length > 0}
+                        className="btn-secondary text-sm py-2 px-4"
+                      >
+                        Pull Model
+                      </button>
+                    </div>
+                    <p className="text-xs text-text-muted mt-2">
+                      Browse available models at <a href="https://ollama.ai/library" target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">ollama.ai/library</a>
+                    </p>
+
+                    {/* Pull Progress */}
+                    {Object.entries(ollamaPullingModels).map(([modelId, progress]) => (
+                      <div key={modelId} className="mt-3 p-2 rounded bg-secondary/50">
+                        <div className="flex items-center justify-between mb-1">
+                          <span className="text-sm text-text font-medium">Pulling {modelId}...</span>
+                          <span className="text-xs text-text-muted">{progress.toFixed(0)}%</span>
+                        </div>
+                        <div className="w-full h-2 bg-secondary rounded-full overflow-hidden">
+                          <div
+                            className="h-full bg-primary transition-all duration-300"
+                            style={{ width: `${progress}%` }}
+                          />
+                        </div>
+                      </div>
+                    ))}
+
+                    {/* Pull Errors */}
+                    {Object.entries(ollamaPullErrors).map(([modelId, error]) => (
+                      <div key={modelId} className="mt-2 text-error text-sm flex items-center gap-1">
+                        <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                          <path
+                            fillRule="evenodd"
+                            d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z"
+                            clipRule="evenodd"
+                          />
+                        </svg>
+                        Failed to pull {modelId}: {error}
+                      </div>
+                    ))}
+                  </div>
+                </>
               ) : (
                 <div className="space-y-3">
                   <p className="text-sm text-text-muted">
@@ -678,8 +840,11 @@ export function SettingsPanel({ settings, onSave, isLoading, onClose }: Settings
                   </>
                 ) : (
                   <div className="p-3 rounded-lg border border-secondary bg-secondary/30">
-                    <p className="text-sm text-text-muted">
-                      No models installed. Pull a model using: <code className="bg-secondary px-1 rounded">ollama pull llama3.2</code>
+                    <p className="text-sm text-text-muted mb-2">
+                      No models installed. Pull a model using the form above or run: <code className="bg-secondary px-1 rounded">ollama pull llama3.2</code>
+                    </p>
+                    <p className="text-xs text-text-muted">
+                      Recommended models: <span className="font-medium">llama3.2</span>, <span className="font-medium">mistral</span>, <span className="font-medium">gemma2</span>
                     </p>
                   </div>
                 )
