@@ -3,6 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
+    "prepare": "node scripts/prepare.js --check",
     "dev": "next dev -p 3001",
     "build": "next build",
     "start": "next start",
