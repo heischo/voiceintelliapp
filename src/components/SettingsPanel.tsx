@@ -13,6 +13,7 @@ import {
 } from '../lib/config';
 import { MicrophoneSelector } from './MicrophoneSelector';
 import { OPENROUTER_MODELS } from '../providers/openrouter';
+import { getAppVersion } from '../lib/api';
 
 // OpenAI models
 const OPENAI_MODELS = [
@@ -52,6 +53,12 @@ export function SettingsPanel({ settings, onSave, isLoading, onClose }: Settings
   const [whisperInstallStatus, setWhisperInstallStatus] = useState<string | null>(null);
   const [isVerifyingPath, setIsVerifyingPath] = useState(false);
   const [pathVerifyResult, setPathVerifyResult] = useState<'success' | 'error' | null>(null);
+  const [appVersion, setAppVersion] = useState<string>('');
+
+  // Fetch app version
+  useEffect(() => {
+    getAppVersion().then(setAppVersion);
+  }, []);
 
   // Check whisper availability
   const checkWhisperAvailable = useCallback(async () => {
@@ -588,6 +595,22 @@ export function SettingsPanel({ settings, onSave, isLoading, onClose }: Settings
               />
             </button>
           </div>
+        </div>
+      </section>
+
+      {/* About Section */}
+      <section className="card">
+        <h3 className="text-lg font-semibold text-primary mb-4">About</h3>
+        <div className="space-y-2">
+          <div className="flex items-center justify-between">
+            <span className="text-text">VoiceIntelli</span>
+            <span className="text-text-muted font-mono">
+              {appVersion ? `v${appVersion}` : 'Loading...'}
+            </span>
+          </div>
+          <p className="text-xs text-text-muted">
+            Voice-to-text transcription with AI enrichment
+          </p>
         </div>
       </section>
 
