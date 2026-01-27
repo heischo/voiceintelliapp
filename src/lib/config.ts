@@ -95,6 +95,16 @@ export const OUTPUT_TARGETS: { value: OutputTarget; label: string; description: 
     label: 'Save to File',
     description: 'Save as Markdown file',
   },
+  {
+    value: 'notion',
+    label: 'Notion',
+    description: 'Send directly to a Notion page',
+  },
+  {
+    value: 'google_drive',
+    label: 'Google Drive',
+    description: 'Save as document in Google Drive',
+  },
 ];
 
 export const RETENTION_OPTIONS = [
