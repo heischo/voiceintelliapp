@@ -7,8 +7,12 @@ import { register, unregister, isRegistered } from '@tauri-apps/plugin-global-sh
 import { Store } from '@tauri-apps/plugin-store';
 import { save } from '@tauri-apps/plugin-dialog';
 import { writeTextFile, writeFile, readTextFile, exists, mkdir, BaseDirectory } from '@tauri-apps/plugin-fs';
-import type { Settings } from '../types';
+import type { Settings, NotionSettings } from '../types';
 import { generatePdf, pdfBlobToUint8Array, type PdfGenerateOptions, PdfError } from './pdf';
+import { createPage, NotionError, type CreatePageOptions, type CreatePageResult } from './notion';
+
+// Re-export Notion types for consumers
+export { NotionError, type CreatePageResult } from './notion';
 
 // Store instance for non-sensitive settings
 let store: Store | null = null;
@@ -264,6 +268,66 @@ export async function readFromAppData(filename: string): Promise<string | null> 
   } catch (error) {
     console.error('Failed to read from app data:', error);
     return null;
+  }
+}
+
+// ============================================
+// Notion Export
+// ============================================
+
+export interface ExportToNotionOptions {
+  title?: string;
+  content: string;
+  tags?: string[];
+}
+
+export async function exportToNotion(
+  settings: NotionSettings,
+  options: ExportToNotionOptions
+): Promise<CreatePageResult> {
+  // Validate required settings
+  if (!settings.apiKey) {
+    throw new NotionError({
+      code: 'NOT_CONFIGURED',
+      message: 'Notion API key is not configured. Please add your API key in Settings.',
+      retryable: false,
+    });
+  }
+
+  // Validate content
+  if (!options.content || options.content.trim().length === 0) {
+    throw new NotionError({
+      code: 'VALIDATION_ERROR',
+      message: 'Cannot export empty content to Notion.',
+      retryable: false,
+    });
+  }
+
+  try {
+    const pageOptions: CreatePageOptions = {
+      title: options.title || `Transcript - ${new Date().toLocaleString()}`,
+      content: options.content,
+      parentPageId: settings.parentPageId,
+      databaseId: settings.databaseId,
+      tags: options.tags,
+    };
+
+    const result = await createPage(settings, pageOptions);
+    return result;
+  } catch (error) {
+    // Re-throw NotionError as-is for better error context
+    if (error instanceof NotionError) {
+      throw error;
+    }
+
+    // Wrap unexpected errors
+    console.error('Failed to export to Notion:', error);
+    throw new NotionError({
+      code: 'API_ERROR',
+      message: `Failed to export to Notion: ${getErrorMessage(error)}`,
+      retryable: true,
+      cause: error,
+    });
   }
 }
 
