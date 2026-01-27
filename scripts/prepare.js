@@ -1,23 +1,32 @@
 #!/usr/bin/env node
 
 /**
- * VoiceIntelli Setup Installer
+ * VoiceIntelli Prepare Script
  *
  * Standalone setup script that detects and installs system-level dependencies
- * required to run the VoiceIntelli application on Windows.
+ * required to run the VoiceIntelli application on Windows. This script can be
+ * run as an npm lifecycle hook (prepare) or directly from the command line.
  *
  * Dependencies managed:
  * - Visual Studio C++ Build Tools (required for Rust compilation)
- * - Rust (required for Tauri backend)
+ * - Rust toolchain (required for Tauri backend)
  * - WebView2 Runtime (required for Tauri webview)
  *
  * Usage:
- *   node scripts/setup.js [command]
+ *   node scripts/prepare.js [command]
  *
  * Commands:
  *   (none)     Run full setup with installation prompts
  *   --check    Check dependency status without installing
+ *   --ci       CI mode: silent check, exits 0 (ready) or 1 (missing deps)
  *   --help     Show this help message
+ *
+ * Exit Codes:
+ *   0 - All dependencies installed (ready to build)
+ *   1 - Missing dependencies or error occurred
+ *
+ * @module prepare
+ * @see setup-utils.js for utility functions used by this script
  */
 
 const path = require('path');
@@ -56,8 +65,16 @@ const DEPENDENCY_URLS = {
 };
 
 /**
- * Check if VS Build Tools with VC tools are installed using vswhere.exe
- * @returns {Promise<{ installed: boolean, version?: string, path?: string }>}
+ * Check if Visual Studio Build Tools with VC tools are installed.
+ *
+ * Uses vswhere.exe to detect VS Build Tools installations that include
+ * the Microsoft.VisualStudio.Component.VC.Tools.x86.x64 component,
+ * which is required for compiling Rust code targeting Windows MSVC.
+ *
+ * @returns {Promise<{installed: boolean, version?: string, path?: string}>}
+ *   - installed: true if VS Build Tools with VC tools is found
+ *   - version: installation version (if available)
+ *   - path: installation path (if available)
  */
 async function checkVSBuildTools() {
   // First check if vswhere exists (comes with VS installer)
@@ -100,8 +117,15 @@ async function checkVSBuildTools() {
 }
 
 /**
- * Check if Rust is installed and meets version requirements
- * @returns {Promise<{ installed: boolean, version?: string, meetsMinimum: boolean }>}
+ * Check if Rust is installed and meets version requirements.
+ *
+ * Verifies that rustc is available in PATH and that its version
+ * meets the minimum requirement defined in REQUIRED_VERSIONS.rust.
+ *
+ * @returns {Promise<{installed: boolean, version?: string, meetsMinimum: boolean}>}
+ *   - installed: true if rustc command is found in PATH
+ *   - version: rustc version string (e.g., "1.77.2")
+ *   - meetsMinimum: true if version >= REQUIRED_VERSIONS.rust
  */
 async function checkRust() {
   const exists = await commandExists('rustc');
@@ -130,8 +154,15 @@ async function checkRust() {
 }
 
 /**
- * Check if WebView2 Runtime is installed via registry
- * @returns {Promise<{ installed: boolean, version?: string }>}
+ * Check if WebView2 Runtime is installed via Windows registry.
+ *
+ * Queries the EdgeUpdate registry key to detect WebView2 Runtime
+ * installation. WebView2 is required for Tauri's webview functionality
+ * on Windows.
+ *
+ * @returns {Promise<{installed: boolean, version?: string}>}
+ *   - installed: true if WebView2 Runtime is detected
+ *   - version: WebView2 version string (if available)
  */
 async function checkWebView2() {
   const result = await checkRegistry(WEBVIEW2_REGISTRY_KEY, 'pv');
@@ -147,8 +178,24 @@ async function checkWebView2() {
 }
 
 /**
- * Display dependency status table
- * @param {Object} status - Status object with dependency check results
+ * Display a formatted table showing the status of all dependencies.
+ *
+ * Renders a visual table with colored status indicators for each
+ * dependency (VS Build Tools, Rust, WebView2). Uses ANSI colors
+ * to indicate installed (green), missing (red), or needs update (yellow).
+ *
+ * @param {Object} status - Status object containing dependency check results
+ * @param {Object} status.vsBuildTools - VS Build Tools check result
+ * @param {boolean} status.vsBuildTools.installed - Whether VS Build Tools is installed
+ * @param {string} [status.vsBuildTools.path] - Installation path if available
+ * @param {Object} status.rust - Rust check result
+ * @param {boolean} status.rust.installed - Whether Rust is installed
+ * @param {string} [status.rust.version] - Rust version if installed
+ * @param {boolean} status.rust.meetsMinimum - Whether version meets requirements
+ * @param {Object} status.webview2 - WebView2 check result
+ * @param {boolean} status.webview2.installed - Whether WebView2 is installed
+ * @param {string} [status.webview2.version] - WebView2 version if installed
+ * @returns {void}
  */
 function displayStatus(status) {
   const { vsBuildTools, rust, webview2 } = status;
@@ -188,10 +235,16 @@ function displayStatus(status) {
 }
 
 /**
- * Check all dependencies and return status
- * @param {Object} options - Options for the check
+ * Check all required dependencies in parallel.
+ *
+ * Runs dependency checks for VS Build Tools, Rust, and WebView2
+ * concurrently for faster execution. Used by all command modes
+ * to determine the current installation status.
+ *
+ * @param {Object} [options={}] - Options for the check
  * @param {boolean} [options.silent=false] - Suppress log output (for CI mode)
- * @returns {Promise<Object>} Status of all dependencies
+ * @returns {Promise<{vsBuildTools: Object, rust: Object, webview2: Object}>}
+ *   Object containing status results for each dependency
  */
 async function checkAllDependencies(options = {}) {
   const { silent = false } = options;
@@ -210,9 +263,18 @@ async function checkAllDependencies(options = {}) {
 }
 
 /**
- * Calculate overall readiness
- * @param {Object} status - Dependency status object
- * @returns {{ ready: boolean, missing: string[] }}
+ * Calculate overall system readiness based on dependency status.
+ *
+ * Analyzes the dependency status object to determine if all required
+ * dependencies are installed and meet version requirements.
+ *
+ * @param {Object} status - Dependency status object from checkAllDependencies()
+ * @param {Object} status.vsBuildTools - VS Build Tools check result
+ * @param {Object} status.rust - Rust check result
+ * @param {Object} status.webview2 - WebView2 check result
+ * @returns {{ready: boolean, missing: string[]}}
+ *   - ready: true if all dependencies are installed and meet requirements
+ *   - missing: array of human-readable names of missing dependencies
  */
 function calculateReadiness(status) {
   const missing = [];
@@ -234,8 +296,17 @@ function calculateReadiness(status) {
 }
 
 /**
- * Command: --check
- * Check dependency status and exit
+ * Command handler for --check mode.
+ *
+ * Checks all dependency statuses and displays the results in a
+ * formatted table. Provides guidance on next steps based on the
+ * current status. Does not perform any installations.
+ *
+ * Exit codes:
+ *   0 - All dependencies installed
+ *   1 - One or more dependencies missing
+ *
+ * @returns {Promise<void>} Resolves after displaying status and exiting
  */
 async function cmdCheck() {
   logSection('VoiceIntelli Setup - Dependency Status');
@@ -253,14 +324,23 @@ async function cmdCheck() {
   } else {
     log(`Missing dependencies: ${readiness.missing.join(', ')}`, 'warn');
     console.log('');
-    log('Run "node scripts/setup.js" to install missing dependencies.', 'info');
+    log('Run "node scripts/prepare.js" to install missing dependencies.', 'info');
     process.exit(1);
   }
 }
 
 /**
- * Command: (default)
- * Run full setup with installation prompts
+ * Command handler for default (no arguments) mode.
+ *
+ * Runs the full setup workflow: checks dependencies, displays status,
+ * and provides installation instructions for any missing dependencies.
+ * This is the primary user-facing mode for first-time setup.
+ *
+ * Exit codes:
+ *   0 - All dependencies installed (setup complete)
+ *   1 - Missing dependencies (instructions provided)
+ *
+ * @returns {Promise<void>} Resolves after completing setup workflow
  */
 async function cmdSetup() {
   logSection('VoiceIntelli Setup Installer');
@@ -330,9 +410,21 @@ async function cmdSetup() {
 }
 
 /**
- * Command: --ci
- * CI/automated environment mode - silent, check-only, exits with status code
- * Exit codes: 0 = all dependencies installed, 1 = missing dependencies
+ * Command handler for --ci mode (CI/automated environments).
+ *
+ * Performs a silent dependency check without any interactive prompts
+ * or verbose output. Designed for use in CI pipelines, npm lifecycle
+ * hooks, and automated scripts where minimal output is preferred.
+ *
+ * Output:
+ *   - On success: No output (silent)
+ *   - On failure: Single line listing missing dependencies
+ *
+ * Exit codes:
+ *   0 - All dependencies installed (ready to build)
+ *   1 - One or more dependencies missing
+ *
+ * @returns {Promise<void>} Resolves after check completes and process exits
  */
 async function cmdCi() {
   const status = await checkAllDependencies({ silent: true });
@@ -348,7 +440,12 @@ async function cmdCi() {
 }
 
 /**
- * Print usage information
+ * Print usage information and command help to stdout.
+ *
+ * Displays a formatted help message showing available commands,
+ * their descriptions, managed dependencies, and usage examples.
+ *
+ * @returns {void}
  */
 function printHelp() {
   console.log(`
@@ -377,7 +474,20 @@ For more information, see the VoiceIntelli documentation.
 `);
 }
 
-// Main execution
+/**
+ * Main entry point for the prepare script.
+ *
+ * Parses command-line arguments and dispatches to the appropriate
+ * command handler. Handles errors gracefully with informative messages.
+ *
+ * Supported commands:
+ *   --help, -h : Show help message
+ *   --check, -c: Check dependency status
+ *   --ci       : CI mode (silent check)
+ *   (none)     : Full setup mode
+ *
+ * @returns {Promise<void>} Resolves when command completes
+ */
 async function main() {
   const args = process.argv.slice(2);
   const command = args[0];
