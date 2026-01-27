@@ -189,10 +189,16 @@ function displayStatus(status) {
 
 /**
  * Check all dependencies and return status
+ * @param {Object} options - Options for the check
+ * @param {boolean} [options.silent=false] - Suppress log output (for CI mode)
  * @returns {Promise<Object>} Status of all dependencies
  */
-async function checkAllDependencies() {
-  log('Checking installed dependencies...', 'info');
+async function checkAllDependencies(options = {}) {
+  const { silent = false } = options;
+
+  if (!silent) {
+    log('Checking installed dependencies...', 'info');
+  }
 
   const [vsBuildTools, rust, webview2] = await Promise.all([
     checkVSBuildTools(),
@@ -324,17 +330,36 @@ async function cmdSetup() {
 }
 
 /**
+ * Command: --ci
+ * CI/automated environment mode - silent, check-only, exits with status code
+ * Exit codes: 0 = all dependencies installed, 1 = missing dependencies
+ */
+async function cmdCi() {
+  const status = await checkAllDependencies({ silent: true });
+  const readiness = calculateReadiness(status);
+
+  if (readiness.ready) {
+    process.exit(0);
+  } else {
+    // Only output missing dependencies for CI logs
+    console.log(`Missing: ${readiness.missing.join(', ')}`);
+    process.exit(1);
+  }
+}
+
+/**
  * Print usage information
  */
 function printHelp() {
   console.log(`
 ${COLORS.blue}VoiceIntelli Setup Installer${COLORS.reset}
 
-Usage: node scripts/setup.js [command]
+Usage: node scripts/prepare.js [command]
 
 Commands:
   (none)     Run full setup with installation prompts
   --check    Check dependency status without installing
+  --ci       CI mode: silent check, exits 0 (ready) or 1 (missing deps)
   --help     Show this help message
 
 Dependencies Managed:
@@ -343,9 +368,10 @@ Dependencies Managed:
   - WebView2 Runtime
 
 Examples:
-  node scripts/setup.js           # Run full setup
-  node scripts/setup.js --check   # Check status only
-  node scripts/setup.js --help    # Show help
+  node scripts/prepare.js           # Run full setup
+  node scripts/prepare.js --check   # Check status only
+  node scripts/prepare.js --ci      # CI mode (silent check)
+  node scripts/prepare.js --help    # Show help
 
 For more information, see the VoiceIntelli documentation.
 `);
@@ -365,6 +391,9 @@ async function main() {
       case '--check':
       case '-c':
         await cmdCheck();
+        break;
+      case '--ci':
+        await cmdCi();
         break;
       case undefined:
         await cmdSetup();
