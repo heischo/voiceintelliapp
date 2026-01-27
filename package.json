@@ -3,6 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
+    "prepare": "node scripts/prepare.js --check",
     "dev": "next dev -p 3001",
     "build": "next build",
     "start": "next start",
@@ -23,11 +24,12 @@
     "version:minor": "node scripts/bump-version.js minor",
     "version:major": "node scripts/bump-version.js major",
     "version:check": "node scripts/bump-version.js check",
-    "setup:build": "pkg scripts/setup.js --targets node18-win-x64 --output dist/voiceintelli-setup.exe"
+    "setup:install": "node scripts/prepare.js",
+    "setup:build": "npx @yao-pkg/pkg scripts/prepare.js --targets node18-win-x64 --output dist/voiceintelli-setup.exe"
   },
   "pkg": {
     "scripts": [
-      "scripts/setup.js",
+      "scripts/prepare.js",
       "scripts/setup-utils.js"
     ],
     "assets": [],
