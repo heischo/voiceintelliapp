@@ -21,6 +21,7 @@ export default function Home() {
   const [showSetupWizard, setShowSetupWizard] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
+  const [showTranscriptModal, setShowTranscriptModal] = useState(false);
   const [historyEntries, setHistoryEntries] = useState<HistoryItem[]>([]);
 
   const [enrichmentMode, setEnrichmentMode] = useState<EnrichmentMode>(settings.enrichmentMode);
@@ -102,6 +103,21 @@ export default function Home() {
     }
   }, [transcript, enrichmentMode, customPrompt, llm, recording.duration]);
 
+  // Re-enrich when enrichment mode changes (if content already exists)
+  useEffect(() => {
+    if (transcript && enrichedContent && !isEnriching) {
+      handleEnrich();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [enrichmentMode]);
+
+  // Auto-show transcript modal when transcript is set
+  useEffect(() => {
+    if (transcript) {
+      setShowTranscriptModal(true);
+    }
+  }, [transcript]);
+
   // Handle stop recording
   const handleStopRecording = useCallback(async () => {
     const audioBlob = await recording.stopRecording();
@@ -151,6 +167,7 @@ export default function Home() {
 
   // Handle new recording
   const handleNewRecording = () => {
+    setShowTranscriptModal(false);
     setTranscript(null);
     setEnrichedContent(null);
     recording.startRecording();
@@ -261,6 +278,114 @@ export default function Home() {
                     ))}
                   </div>
                 )}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Transcript Modal */}
+      {showTranscriptModal && transcript && (
+        <div className="fixed inset-0 z-50 flex items-start justify-center bg-black/50 overflow-y-auto">
+          <div className="min-h-screen py-8 px-4 w-full max-w-2xl">
+            <div className="bg-background rounded-lg shadow-xl">
+              {/* Modal Header with X button */}
+              <div className="border-b border-secondary px-6 py-4 flex items-center justify-between">
+                <h2 className="text-xl font-bold text-text">Transcript</h2>
+                <button
+                  onClick={() => setShowTranscriptModal(false)}
+                  className="text-text-muted hover:text-text transition-colors"
+                >
+                  <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+
+              {/* Modal Body */}
+              <div className="p-6 space-y-6">
+                {/* Transcript Content */}
+                <div className="card">
+                  <div className="flex justify-between items-center mb-3">
+                    <h3 className="text-lg font-semibold text-text">Recording</h3>
+                    <button
+                      onClick={handleNewRecording}
+                      className="btn-secondary text-sm px-3 py-1.5"
+                    >
+                      New Recording
+                    </button>
+                  </div>
+                  <div className="p-4 bg-background rounded-lg text-text whitespace-pre-wrap max-h-[10.5rem] overflow-y-auto">
+                    {transcript}
+                  </div>
+                </div>
+
+                {/* Enrichment Controls */}
+                <div className="grid grid-cols-2 gap-6">
+                  <EnrichmentModeSelector
+                    value={enrichmentMode}
+                    onChange={setEnrichmentMode}
+                    customPrompt={customPrompt}
+                    onCustomPromptChange={setCustomPrompt}
+                    disabled={isEnriching}
+                  />
+                  <OutputRouter
+                    value={outputTarget}
+                    onChange={setOutputTarget}
+                    content={enrichedContent || undefined}
+                    disabled={isEnriching}
+                  />
+                </div>
+
+                {/* Enrich Button */}
+                {!enrichedContent && (
+                  <button
+                    onClick={() => handleEnrich()}
+                    disabled={isEnriching || llm.isProcessing}
+                    className="w-full btn-accent py-4 text-lg"
+                  >
+                    {isEnriching || llm.isProcessing ? (
+                      <span className="flex items-center justify-center gap-2">
+                        <svg className="animate-spin h-5 w-5" viewBox="0 0 24 24">
+                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
+                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                        </svg>
+                        Processing...
+                      </span>
+                    ) : (
+                      'Enrich Transcript'
+                    )}
+                  </button>
+                )}
+
+                {/* LLM Error */}
+                {llm.error && (
+                  <div className="p-4 bg-error/10 border border-error rounded-lg text-error">
+                    {llm.error}
+                  </div>
+                )}
+
+                {/* Enriched Content */}
+                {enrichedContent && (
+                  <div className="card">
+                    <h3 className="text-lg font-semibold text-text mb-3">
+                      Enriched Content
+                    </h3>
+                    <div className="p-4 bg-background rounded-lg text-text whitespace-pre-wrap max-h-[10.5rem] overflow-y-auto">
+                      {enrichedContent}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Modal Footer with Cancel button */}
+              <div className="border-t border-secondary px-6 py-4 flex justify-end">
+                <button
+                  onClick={() => setShowTranscriptModal(false)}
+                  className="btn-secondary px-6 py-2"
+                >
+                  Cancel
+                </button>
               </div>
             </div>
           </div>
@@ -448,81 +573,15 @@ export default function Home() {
           </div>
         )}
 
-        {/* Results Section */}
-        {transcript && (
-          <div className="space-y-6">
-            {/* Transcript */}
-            <div className="card">
-              <div className="flex justify-between items-center mb-3">
-                <h2 className="text-lg font-semibold text-text">Transcript</h2>
-                <button
-                  onClick={handleNewRecording}
-                  className="btn-secondary text-sm px-3 py-1.5"
-                >
-                  New Recording
-                </button>
-              </div>
-              <div className="p-4 bg-background rounded-lg text-text whitespace-pre-wrap">
-                {transcript}
-              </div>
-            </div>
-
-            {/* Enrichment Controls */}
-            <div className="grid grid-cols-2 gap-6">
-              <EnrichmentModeSelector
-                value={enrichmentMode}
-                onChange={setEnrichmentMode}
-                customPrompt={customPrompt}
-                onCustomPromptChange={setCustomPrompt}
-                disabled={isEnriching}
-              />
-              <OutputRouter
-                value={outputTarget}
-                onChange={setOutputTarget}
-                content={enrichedContent || undefined}
-                disabled={isEnriching}
-              />
-            </div>
-
-            {/* Enrich Button */}
-            {!enrichedContent && (
-              <button
-                onClick={() => handleEnrich()}
-                disabled={isEnriching || llm.isProcessing}
-                className="w-full btn-accent py-4 text-lg"
-              >
-                {isEnriching || llm.isProcessing ? (
-                  <span className="flex items-center justify-center gap-2">
-                    <svg className="animate-spin h-5 w-5" viewBox="0 0 24 24">
-                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
-                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
-                    </svg>
-                    Processing...
-                  </span>
-                ) : (
-                  'Enrich Transcript'
-                )}
-              </button>
-            )}
-
-            {/* LLM Error */}
-            {llm.error && (
-              <div className="p-4 bg-error/10 border border-error rounded-lg text-error">
-                {llm.error}
-              </div>
-            )}
-
-            {/* Enriched Content */}
-            {enrichedContent && (
-              <div className="card">
-                <h2 className="text-lg font-semibold text-text mb-3">
-                  Enriched Content
-                </h2>
-                <div className="p-4 bg-background rounded-lg text-text whitespace-pre-wrap">
-                  {enrichedContent}
-                </div>
-              </div>
-            )}
+        {/* Results Section - Placeholder when transcript exists but modal is closed */}
+        {transcript && !showTranscriptModal && (
+          <div className="flex flex-col items-center py-16">
+            <button
+              onClick={() => setShowTranscriptModal(true)}
+              className="btn-primary px-6 py-3"
+            >
+              View Transcript
+            </button>
           </div>
         )}
       </main>
