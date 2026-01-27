@@ -21,6 +21,7 @@ export default function Home() {
   const [showSetupWizard, setShowSetupWizard] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
+  const [showTranscriptModal, setShowTranscriptModal] = useState(false);
   const [historyEntries, setHistoryEntries] = useState<HistoryItem[]>([]);
 
   const [enrichmentMode, setEnrichmentMode] = useState<EnrichmentMode>(settings.enrichmentMode);
@@ -104,6 +105,13 @@ export default function Home() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [enrichmentMode]);
 
+  // Auto-show transcript modal when transcript is set
+  useEffect(() => {
+    if (transcript) {
+      setShowTranscriptModal(true);
+    }
+  }, [transcript]);
+
   // Handle stop recording
   const handleStopRecording = useCallback(async () => {
     const audioBlob = await recording.stopRecording();
@@ -153,6 +161,7 @@ export default function Home() {
 
   // Handle new recording
   const handleNewRecording = () => {
+    setShowTranscriptModal(false);
     setTranscript(null);
     setEnrichedContent(null);
     recording.startRecording();
