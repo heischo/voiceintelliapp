@@ -952,6 +952,69 @@ pub struct OllamaPullResult {
     pub model: String,
 }
 
+/// Result of OLLAMA model deletion
+#[derive(Debug, Serialize, Deserialize)]
+pub struct OllamaDeleteResult {
+    pub success: bool,
+    pub message: String,
+    pub model: String,
+}
+
+/// Delete an OLLAMA model
+#[tauri::command]
+pub async fn delete_ollama_model(
+    model: String,
+    base_url: Option<String>,
+) -> Result<OllamaDeleteResult, String> {
+    let url = base_url.unwrap_or_else(|| "http://localhost:11434".to_string());
+    let delete_endpoint = format!("{}/api/delete", url);
+
+    log::info!("Deleting OLLAMA model '{}' via: {}", model, delete_endpoint);
+
+    // Create HTTP client with timeout
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(30))
+        .build()
+        .map_err(|e| format!("Failed to create HTTP client: {}", e))?;
+
+    // Prepare the request body
+    let body = serde_json::json!({ "name": model }).to_string();
+
+    // Send DELETE request to remove the model
+    let response = client
+        .delete(&delete_endpoint)
+        .header("Content-Type", "application/json")
+        .body(body)
+        .send()
+        .await
+        .map_err(|e| format!("Failed to send delete request: {}", e))?;
+
+    if response.status().is_success() {
+        log::info!("Model '{}' deleted successfully", model);
+        Ok(OllamaDeleteResult {
+            success: true,
+            message: format!("Model '{}' deleted successfully", model),
+            model,
+        })
+    } else {
+        let status = response.status();
+        let error_text = response.text().await.unwrap_or_default();
+
+        // Parse error message from OLLAMA response if possible
+        let error_msg = if let Ok(json) = serde_json::from_str::<serde_json::Value>(&error_text) {
+            json.get("error")
+                .and_then(|v| v.as_str())
+                .unwrap_or(&error_text)
+                .to_string()
+        } else {
+            error_text
+        };
+
+        log::warn!("Failed to delete model '{}': {} - {}", model, status, error_msg);
+        Err(format!("Failed to delete model: {}", error_msg))
+    }
+}
+
 /// Pull an OLLAMA model with streaming progress events
 #[tauri::command]
 pub async fn pull_ollama_model(
