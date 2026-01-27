@@ -3,7 +3,15 @@
 import { useState } from 'react';
 import type { OutputTarget } from '../types';
 import { OUTPUT_TARGETS } from '../lib/config';
-import { copyToClipboard, saveToFile } from '../lib/api';
+import { copyToClipboard, saveToFile, saveAsPdf } from '../lib/api';
+
+// File format options for "Save to File" output target
+type FileFormat = 'markdown' | 'pdf';
+
+const FILE_FORMATS: { value: FileFormat; label: string; extension: string }[] = [
+  { value: 'markdown', label: 'Markdown', extension: '.md' },
+  { value: 'pdf', label: 'PDF', extension: '.pdf' },
+];
 
 interface OutputRouterProps {
   value: OutputTarget;
@@ -21,6 +29,7 @@ export function OutputRouter({
   const [status, setStatus] = useState<'idle' | 'success' | 'error'>('idle');
   const [statusMessage, setStatusMessage] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [fileFormat, setFileFormat] = useState<FileFormat>('markdown');
 
   const handleOutput = async () => {
     if (!content || isLoading) return;
@@ -33,10 +42,21 @@ export function OutputRouter({
         await copyToClipboard(content);
         setStatus('success');
         setStatusMessage('Copied to clipboard!');
-      } else {
+      } else if (value === 'file') {
         const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-        const filename = `transcript-${timestamp}.md`;
-        const path = await saveToFile(content, filename);
+        let path: string | null = null;
+
+        if (fileFormat === 'pdf') {
+          // Save as PDF with Unicode support
+          path = await saveAsPdf(content, {
+            title: `Transcript - ${new Date().toLocaleString()}`,
+          });
+        } else {
+          // Save as Markdown
+          const filename = `transcript-${timestamp}.md`;
+          path = await saveToFile(content, filename);
+        }
+
         if (path) {
           setStatus('success');
           setStatusMessage(`Saved to ${path}`);
@@ -99,6 +119,46 @@ export function OutputRouter({
         ))}
       </div>
 
+      {/* File format selection - shown when 'file' is selected */}
+      {value === 'file' && (
+        <div className="space-y-2">
+          <label className="block text-sm font-medium text-text-muted">
+            File Format
+          </label>
+          <div className="flex gap-2">
+            {FILE_FORMATS.map((format) => (
+              <button
+                key={format.value}
+                onClick={() => setFileFormat(format.value)}
+                disabled={disabled}
+                className={`flex-1 px-3 py-2 rounded-lg border transition-all text-sm
+                  ${fileFormat === format.value
+                    ? 'border-primary bg-primary/10 text-text'
+                    : 'border-secondary bg-background text-text-muted hover:border-primary/50'
+                  }
+                  ${disabled ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
+              >
+                <div className="flex items-center justify-center gap-2">
+                  {format.value === 'markdown' ? (
+                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                        d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                    </svg>
+                  ) : (
+                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                        d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
+                    </svg>
+                  )}
+                  <span className="font-medium">{format.label}</span>
+                  <span className="text-xs text-text-muted">{format.extension}</span>
+                </div>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* Output button */}
       {content && (
         <button
@@ -137,7 +197,11 @@ export function OutputRouter({
             </span>
           ) : (
             <span className="flex items-center justify-center gap-2">
-              {value === 'clipboard' ? 'Copy to Clipboard' : 'Save to File'}
+              {value === 'clipboard'
+                ? 'Copy to Clipboard'
+                : value === 'file'
+                  ? `Save as ${fileFormat === 'pdf' ? 'PDF' : 'Markdown'}`
+                  : 'Save to File'}
             </span>
           )}
         </button>
