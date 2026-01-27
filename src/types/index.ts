@@ -11,7 +11,7 @@ export type EnrichmentMode =
 
 export type OutputTarget = 'clipboard' | 'file';
 
-export type LLMProvider = 'openai' | 'openrouter';
+export type LLMProvider = 'openai' | 'openrouter' | 'ollama';
 
 export type Language = 'en' | 'de' | 'no';
 
@@ -34,6 +34,8 @@ export interface Settings {
   // API Keys (stored securely)
   openaiApiKey?: string;
   openrouterApiKey?: string;
+  // Ollama settings
+  ollamaModel?: string;
   // Microphone
   selectedMicrophone?: string;
   // Whisper
