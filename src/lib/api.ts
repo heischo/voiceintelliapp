@@ -6,8 +6,9 @@ import { writeText, readText } from '@tauri-apps/plugin-clipboard-manager';
 import { register, unregister, isRegistered } from '@tauri-apps/plugin-global-shortcut';
 import { Store } from '@tauri-apps/plugin-store';
 import { save } from '@tauri-apps/plugin-dialog';
-import { writeTextFile, readTextFile, exists, mkdir, BaseDirectory } from '@tauri-apps/plugin-fs';
+import { writeTextFile, writeFile, readTextFile, exists, mkdir, BaseDirectory } from '@tauri-apps/plugin-fs';
 import type { Settings } from '../types';
+import { generatePdf, pdfBlobToUint8Array, type PdfGenerateOptions, PdfError } from './pdf';
 
 // Store instance for non-sensitive settings
 let store: Store | null = null;
@@ -197,6 +198,39 @@ export async function saveToFile(
     return null;
   } catch (error) {
     console.error('Failed to save file:', error);
+    throw error;
+  }
+}
+
+export async function saveAsPdf(
+  content: string,
+  options?: PdfGenerateOptions
+): Promise<string | null> {
+  try {
+    // Generate the PDF
+    const pdfResult = await generatePdf(content, options);
+
+    // Show save dialog with PDF filter
+    const filePath = await save({
+      defaultPath: pdfResult.filename,
+      filters: [
+        { name: 'PDF Documents', extensions: ['pdf'] },
+      ],
+    });
+
+    if (filePath) {
+      // Convert blob to Uint8Array for binary file writing
+      const pdfData = await pdfBlobToUint8Array(pdfResult.blob);
+      await writeFile(filePath, pdfData);
+      return filePath;
+    }
+    return null;
+  } catch (error) {
+    // Re-throw PdfError as-is for better error context
+    if (error instanceof PdfError) {
+      throw error;
+    }
+    console.error('Failed to save PDF:', error);
     throw error;
   }
 }
