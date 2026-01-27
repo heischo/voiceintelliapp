@@ -82,6 +82,11 @@ export const LLM_PROVIDERS: { value: LLMProvider; label: string; description: st
     label: 'OpenRouter',
     description: 'Access multiple models via OpenRouter',
   },
+  {
+    value: 'ollama',
+    label: 'Ollama',
+    description: 'Local LLM models for privacy-first processing',
+  },
 ];
 
 export const OUTPUT_TARGETS: { value: OutputTarget; label: string; description: string }[] = [
