@@ -80,6 +80,10 @@ pub fn run() {
             commands::install_whisper,
             commands::get_available_models,
             commands::download_whisper_model,
+            commands::check_ollama_available,
+            commands::get_ollama_models,
+            commands::delete_ollama_model,
+            commands::pull_ollama_model,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
