@@ -42,10 +42,12 @@ export function SettingsPanel({ settings, onSave, isLoading, onClose }: Settings
   const [apiKeys, setApiKeys] = useState<Record<string, string>>({
     openai: settings.openaiApiKey || '',
     openrouter: settings.openrouterApiKey || '',
+    notion: settings.notionApiKey || '',
   });
   const [showApiKey, setShowApiKey] = useState<Record<string, boolean>>({
     openai: false,
     openrouter: false,
+    notion: false,
   });
   const [whisperAvailable, setWhisperAvailable] = useState<boolean | null>(null);
   const [whisperPath, setWhisperPath] = useState<string>(settings.whisperPath || '');
@@ -163,6 +165,9 @@ export function SettingsPanel({ settings, onSave, isLoading, onClose }: Settings
       }
       if (apiKeys.openrouter) {
         settingsToSave.openrouterApiKey = apiKeys.openrouter;
+      }
+      if (apiKeys.notion) {
+        settingsToSave.notionApiKey = apiKeys.notion;
       }
       await onSave(settingsToSave);
       setSaveSuccess(true);
@@ -522,6 +527,66 @@ export function SettingsPanel({ settings, onSave, isLoading, onClose }: Settings
               ))}
             </div>
           </div>
+        </div>
+      </section>
+
+      {/* Notion Integration Settings */}
+      <section className="card">
+        <h3 className="text-lg font-semibold text-primary mb-4">Notion Integration</h3>
+        <div className="space-y-4">
+          <div className="p-4 rounded-lg border border-secondary bg-secondary/20">
+            <div className="font-medium text-text mb-2">Setup Instructions</div>
+            <ol className="text-sm text-text-muted space-y-2 list-decimal list-inside">
+              <li>Go to <a href="https://www.notion.so/my-integrations" target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">notion.so/my-integrations</a></li>
+              <li>Click &quot;New integration&quot; and give it a name</li>
+              <li>Copy the &quot;Internal Integration Token&quot;</li>
+              <li>In Notion, share your target page/database with the integration</li>
+            </ol>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-text mb-2">
+              Notion API Key
+            </label>
+            <div className="relative">
+              <input
+                type={showApiKey.notion ? 'text' : 'password'}
+                value={apiKeys.notion}
+                onChange={(e) =>
+                  setApiKeys((prev) => ({
+                    ...prev,
+                    notion: e.target.value,
+                  }))
+                }
+                placeholder="Enter your Notion integration token (secret_...)"
+                className="input w-full pr-20"
+              />
+              <button
+                type="button"
+                onClick={() =>
+                  setShowApiKey((prev) => ({
+                    ...prev,
+                    notion: !prev.notion,
+                  }))
+                }
+                className="absolute right-2 top-1/2 -translate-y-1/2 px-3 py-1 text-sm text-text-muted hover:text-text"
+              >
+                {showApiKey.notion ? 'Hide' : 'Show'}
+              </button>
+            </div>
+            <p className="text-xs text-text-muted mt-1">
+              Your API key is stored securely in your system keychain
+            </p>
+          </div>
+
+          {apiKeys.notion && (
+            <div className="flex items-center gap-2 text-sm">
+              <svg className="w-4 h-4 text-success" fill="currentColor" viewBox="0 0 20 20">
+                <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+              </svg>
+              <span className="text-text-muted">Notion integration configured</span>
+            </div>
+          )}
         </div>
       </section>
 

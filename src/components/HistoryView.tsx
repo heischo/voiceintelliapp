@@ -1,9 +1,9 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import type { EnrichmentMode } from '../types';
 import { ENRICHMENT_MODE_LABELS } from '../types';
-import { getHistory, deleteHistoryItem, clearHistory, copyToClipboard, type HistoryItem } from '../lib/api';
+import { getHistory, deleteHistoryItem, clearHistory, copyToClipboard, saveAsPdf, exportToNotion, getSettings, NotionError, type HistoryItem } from '../lib/api';
 
 interface HistoryViewProps {
   onReprocess?: (item: HistoryItem, mode: EnrichmentMode) => void;
@@ -14,9 +14,25 @@ export function HistoryView({ onReprocess }: HistoryViewProps) {
   const [isLoading, setIsLoading] = useState(true);
   const [selectedItem, setSelectedItem] = useState<HistoryItem | null>(null);
   const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [copyError, setCopyError] = useState<string | null>(null);
+  const [showExportMenu, setShowExportMenu] = useState(false);
+  const [exportStatus, setExportStatus] = useState<'idle' | 'loading' | 'success' | 'error'>('idle');
+  const [exportMessage, setExportMessage] = useState('');
+  const exportMenuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     loadHistory();
+  }, []);
+
+  // Close export menu when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (exportMenuRef.current && !exportMenuRef.current.contains(event.target as Node)) {
+        setShowExportMenu(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
   const loadHistory = async () => {
@@ -56,12 +72,102 @@ export function HistoryView({ onReprocess }: HistoryViewProps) {
   };
 
   const handleCopy = async (content: string, id: string) => {
+    // Clear any previous error state
+    setCopyError(null);
+
     try {
       await copyToClipboard(content);
       setCopiedId(id);
       setTimeout(() => setCopiedId(null), 2000);
     } catch (error) {
-      console.error('Failed to copy:', error);
+      // Set error state with the item id to show error feedback
+      setCopyError(id);
+      setTimeout(() => setCopyError(null), 3000);
+    }
+  };
+
+  const handleExportPdf = async (item: HistoryItem) => {
+    setShowExportMenu(false);
+    setExportStatus('loading');
+    setExportMessage('Exporting to PDF...');
+
+    try {
+      const title = `Transcript - ${formatDate(item.timestamp)}`;
+      const filePath = await saveAsPdf(item.enrichedContent, {
+        title,
+        filename: `transcript-${item.id.slice(0, 8)}.pdf`,
+      });
+
+      if (filePath) {
+        setExportStatus('success');
+        setExportMessage('PDF exported successfully!');
+        // Clear status after delay
+        setTimeout(() => {
+          setExportStatus('idle');
+          setExportMessage('');
+        }, 3000);
+      } else {
+        // User cancelled the dialog
+        setExportStatus('idle');
+        setExportMessage('');
+      }
+    } catch (error) {
+      setExportStatus('error');
+      setExportMessage('Failed to export PDF');
+      // Clear error status after longer delay
+      setTimeout(() => {
+        setExportStatus('idle');
+        setExportMessage('');
+      }, 5000);
+    }
+  };
+
+  const handleExportNotion = async (item: HistoryItem) => {
+    setShowExportMenu(false);
+    setExportStatus('loading');
+    setExportMessage('Exporting to Notion...');
+
+    try {
+      const settings = await getSettings();
+      if (!settings?.notionApiKey) {
+        setExportStatus('error');
+        setExportMessage('Notion API key not configured. Please add it in Settings.');
+        setTimeout(() => {
+          setExportStatus('idle');
+          setExportMessage('');
+        }, 5000);
+        return;
+      }
+
+      const title = `Transcript - ${formatDate(item.timestamp)}`;
+      // Create NotionSettings from app settings
+      const notionSettings = {
+        apiKey: settings.notionApiKey,
+      };
+      await exportToNotion(notionSettings, {
+        title,
+        content: item.enrichedContent,
+      });
+
+      setExportStatus('success');
+      setExportMessage('Exported to Notion!');
+      // Clear success status after delay
+      setTimeout(() => {
+        setExportStatus('idle');
+        setExportMessage('');
+      }, 3000);
+    } catch (error) {
+      setExportStatus('error');
+      if (error instanceof NotionError) {
+        setExportMessage(error.message);
+      } else {
+        setExportMessage('Failed to export to Notion');
+      }
+      // Clear error status after longer delay
+      setTimeout(() => {
+        setExportStatus('idle');
+        setExportMessage('');
+      }, 5000);
     }
   };
 
@@ -165,10 +271,108 @@ export function HistoryView({ onReprocess }: HistoryViewProps) {
               <div className="flex gap-2">
                 <button
                   onClick={() => handleCopy(selectedItem.enrichedContent, selectedItem.id)}
-                  className="btn-secondary text-sm px-3 py-1.5"
+                  className={`text-sm px-3 py-1.5 rounded-lg transition-all flex items-center gap-1.5
+                    ${copiedId === selectedItem.id
+                      ? 'bg-success/20 text-success border border-success'
+                      : copyError === selectedItem.id
+                        ? 'bg-error/20 text-error border border-error'
+                        : 'btn-secondary'
+                    }`}
                 >
-                  {copiedId === selectedItem.id ? 'Copied!' : 'Copy'}
+                  {copiedId === selectedItem.id ? (
+                    <>
+                      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                      </svg>
+                      Copied!
+                    </>
+                  ) : copyError === selectedItem.id ? (
+                    <>
+                      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                      </svg>
+                      Failed
+                    </>
+                  ) : (
+                    'Copy'
+                  )}
                 </button>
+
+                {/* Export dropdown */}
+                <div className="relative" ref={exportMenuRef}>
+                  <button
+                    onClick={() => setShowExportMenu(!showExportMenu)}
+                    disabled={exportStatus === 'loading'}
+                    className={`text-sm px-3 py-1.5 rounded-lg transition-all flex items-center gap-1.5
+                      ${exportStatus === 'success'
+                        ? 'bg-success/20 text-success border border-success'
+                        : exportStatus === 'error'
+                          ? 'bg-error/20 text-error border border-error'
+                          : exportStatus === 'loading'
+                            ? 'btn-secondary opacity-70'
+                            : 'btn-secondary'
+                      }`}
+                  >
+                    {exportStatus === 'loading' ? (
+                      <>
+                        <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
+                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                        </svg>
+                        Exporting...
+                      </>
+                    ) : exportStatus === 'success' ? (
+                      <>
+                        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                        </svg>
+                        Exported!
+                      </>
+                    ) : exportStatus === 'error' ? (
+                      <>
+                        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                        </svg>
+                        Failed
+                      </>
+                    ) : (
+                      <>
+                        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+                        </svg>
+                        Export
+                        <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                        </svg>
+                      </>
+                    )}
+                  </button>
+
+                  {/* Dropdown menu */}
+                  {showExportMenu && (
+                    <div className="absolute right-0 top-full mt-1 bg-surface border border-secondary rounded-lg shadow-lg z-10 min-w-[140px]">
+                      <button
+                        onClick={() => handleExportPdf(selectedItem)}
+                        className="w-full px-3 py-2 text-sm text-left text-text hover:bg-primary/10 rounded-t-lg flex items-center gap-2 transition-colors"
+                      >
+                        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
+                        </svg>
+                        PDF
+                      </button>
+                      <button
+                        onClick={() => handleExportNotion(selectedItem)}
+                        className="w-full px-3 py-2 text-sm text-left text-text hover:bg-primary/10 rounded-b-lg flex items-center gap-2 transition-colors"
+                      >
+                        <svg className="w-4 h-4" viewBox="0 0 24 24" fill="currentColor">
+                          <path d="M4.459 4.208c.746.606 1.026.56 2.428.466l13.215-.793c.28 0 .047-.28-.046-.326L17.86 1.968c-.42-.326-.981-.7-2.055-.607L3.01 2.295c-.466.046-.56.28-.374.466zm.793 3.08v13.904c0 .747.373 1.027 1.214.98l14.523-.84c.841-.046.935-.56.935-1.167V6.354c0-.606-.233-.933-.748-.887l-15.177.887c-.56.047-.747.327-.747.934zm14.337.745c.093.42 0 .84-.42.888l-.7.14v10.264c-.608.327-1.168.514-1.635.514-.748 0-.935-.234-1.495-.933l-4.577-7.186v6.952l1.448.327s0 .84-1.168.84l-3.22.186c-.094-.186 0-.653.327-.746l.84-.233V9.854L7.822 9.76c-.094-.42.14-1.026.793-1.073l3.453-.233 4.764 7.279v-6.44l-1.215-.139c-.093-.514.28-.887.747-.933zM2.64 1.502l13.589-.933c1.682-.14 2.102.093 2.81.607l3.874 2.707c.466.327.607.746.607 1.26v14.813c0 .84-.326 1.4-1.261 1.447l-15.456.887c-.7.047-1.027-.14-1.354-.56l-2.148-2.8c-.374-.467-.56-.887-.56-1.447V2.875c0-.56.28-1.12 1.26-1.213z" />
+                        </svg>
+                        Notion
+                      </button>
+                    </div>
+                  )}
+                </div>
+
                 <button
                   onClick={() => handleDelete(selectedItem.id)}
                   className="text-sm px-3 py-1.5 text-error hover:bg-error/10 rounded-lg transition-colors"
@@ -177,6 +381,19 @@ export function HistoryView({ onReprocess }: HistoryViewProps) {
                 </button>
               </div>
             </div>
+
+            {/* Export status message */}
+            {exportMessage && (
+              <div className={`text-sm px-3 py-2 rounded-lg mb-4 ${
+                exportStatus === 'success'
+                  ? 'bg-success/10 text-success'
+                  : exportStatus === 'error'
+                    ? 'bg-error/10 text-error'
+                    : 'bg-primary/10 text-primary'
+              }`}>
+                {exportMessage}
+              </div>
+            )}
 
             <div className="flex-1 overflow-y-auto space-y-4">
               <div>
