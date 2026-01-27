@@ -96,6 +96,14 @@ export default function Home() {
     }
   }, [transcript, enrichmentMode, customPrompt, llm, recording.duration]);
 
+  // Re-enrich when enrichment mode changes (if content already exists)
+  useEffect(() => {
+    if (transcript && enrichedContent && !isEnriching) {
+      handleEnrich();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [enrichmentMode]);
+
   // Handle stop recording
   const handleStopRecording = useCallback(async () => {
     const audioBlob = await recording.stopRecording();
