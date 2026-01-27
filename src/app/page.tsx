@@ -309,7 +309,7 @@ export default function Home() {
                       New Recording
                     </button>
                   </div>
-                  <div className="p-4 bg-background rounded-lg text-text whitespace-pre-wrap">
+                  <div className="p-4 bg-background rounded-lg text-text whitespace-pre-wrap max-h-[10.5rem] overflow-y-auto">
                     {transcript}
                   </div>
                 </div>
