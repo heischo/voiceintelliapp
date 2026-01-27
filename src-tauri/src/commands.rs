@@ -179,6 +179,81 @@ pub fn verify_whisper_path(path: String) -> WhisperCheckResult {
     }
 }
 
+/// Result of OLLAMA service availability check
+#[derive(Debug, Serialize, Deserialize)]
+pub struct OllamaCheckResult {
+    pub available: bool,
+    pub version: Option<String>,
+    pub base_url: String,
+}
+
+/// Check if OLLAMA service is running via HTTP API
+#[tauri::command]
+pub async fn check_ollama_available(base_url: Option<String>) -> OllamaCheckResult {
+    let url = base_url.unwrap_or_else(|| "http://localhost:11434".to_string());
+    let version_endpoint = format!("{}/api/version", url);
+
+    log::info!("Checking OLLAMA availability at: {}", version_endpoint);
+
+    // Create HTTP client with timeout
+    let client = match reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(5))
+        .build()
+    {
+        Ok(c) => c,
+        Err(e) => {
+            log::warn!("Failed to create HTTP client: {}", e);
+            return OllamaCheckResult {
+                available: false,
+                version: None,
+                base_url: url,
+            };
+        }
+    };
+
+    // Try to reach the OLLAMA version endpoint
+    match client.get(&version_endpoint).send().await {
+        Ok(response) => {
+            if response.status().is_success() {
+                // Try to parse the version from the response text
+                let version = match response.text().await {
+                    Ok(text) => {
+                        match serde_json::from_str::<serde_json::Value>(&text) {
+                            Ok(json) => json.get("version")
+                                .and_then(|v| v.as_str())
+                                .map(String::from),
+                            Err(_) => None,
+                        }
+                    }
+                    Err(_) => None,
+                };
+
+                log::info!("OLLAMA is available, version: {:?}", version);
+                OllamaCheckResult {
+                    available: true,
+                    version,
+                    base_url: url,
+                }
+            } else {
+                log::warn!("OLLAMA responded with non-success status: {}", response.status());
+                OllamaCheckResult {
+                    available: false,
+                    version: None,
+                    base_url: url,
+                }
+            }
+        }
+        Err(e) => {
+            log::info!("OLLAMA is not available: {}", e);
+            OllamaCheckResult {
+                available: false,
+                version: None,
+                base_url: url,
+            }
+        }
+    }
+}
+
 /// Transcribe audio using whisper.cpp
 #[tauri::command]
 pub async fn transcribe_audio(
