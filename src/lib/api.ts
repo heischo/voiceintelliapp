@@ -83,12 +83,82 @@ export async function isHotkeyRegistered(shortcut: string): Promise<boolean> {
 // Clipboard Operations
 // ============================================
 
+/**
+ * Extracts a type-safe error message from an unknown error
+ */
+function getErrorMessage(error: unknown): string {
+  if (error instanceof Error) {
+    return error.message;
+  }
+  if (typeof error === 'string') {
+    return error;
+  }
+  if (error && typeof error === 'object' && 'message' in error) {
+    return String((error as { message: unknown }).message);
+  }
+  return 'Unknown error occurred';
+}
+
+/**
+ * Custom error class for clipboard operations
+ */
+export class ClipboardError extends Error {
+  constructor(
+    message: string,
+    public readonly cause?: unknown
+  ) {
+    super(message);
+    this.name = 'ClipboardError';
+  }
+}
+
 export async function copyToClipboard(text: string): Promise<void> {
+  // Validate input
+  if (text === null || text === undefined) {
+    throw new ClipboardError('Cannot copy null or undefined to clipboard');
+  }
+
+  if (typeof text !== 'string') {
+    throw new ClipboardError('Clipboard content must be a string');
+  }
+
+  // Allow empty strings but log a warning
+  if (text.length === 0) {
+    console.warn('Copying empty string to clipboard');
+  }
+
   try {
     await writeText(text);
   } catch (error) {
-    console.error('Failed to copy to clipboard:', error);
-    throw error;
+    const errorMessage = getErrorMessage(error);
+
+    // Provide user-friendly error messages for common clipboard failures
+    if (errorMessage.toLowerCase().includes('permission')) {
+      throw new ClipboardError(
+        'Clipboard access denied. Please check your system permissions.',
+        error
+      );
+    }
+
+    if (errorMessage.toLowerCase().includes('focus') || errorMessage.toLowerCase().includes('document')) {
+      throw new ClipboardError(
+        'Cannot access clipboard. Please ensure the application window is focused.',
+        error
+      );
+    }
+
+    if (errorMessage.toLowerCase().includes('not supported') || errorMessage.toLowerCase().includes('unavailable')) {
+      throw new ClipboardError(
+        'Clipboard is not available on this system.',
+        error
+      );
+    }
+
+    // Re-throw with enhanced context
+    throw new ClipboardError(
+      `Failed to copy to clipboard: ${errorMessage}`,
+      error
+    );
   }
 }
 
