@@ -475,22 +475,47 @@ For more information, see the VoiceIntelli documentation.
 }
 
 /**
+ * Check if the script is running as part of an npm lifecycle event.
+ *
+ * When npm runs lifecycle scripts (like 'prepare' during npm install),
+ * it sets the npm_lifecycle_event environment variable. We use this to
+ * detect automated contexts where interactive prompts should be avoided.
+ *
+ * @returns {boolean} True if running as npm lifecycle script
+ */
+function isNpmLifecycleContext() {
+  return !!process.env.npm_lifecycle_event;
+}
+
+/**
  * Main entry point for the prepare script.
  *
  * Parses command-line arguments and dispatches to the appropriate
  * command handler. Handles errors gracefully with informative messages.
  *
+ * When running as an npm lifecycle hook (e.g., during 'npm install'),
+ * the script automatically runs in check-only mode to avoid interactive
+ * prompts that could block automated installations.
+ *
  * Supported commands:
  *   --help, -h : Show help message
  *   --check, -c: Check dependency status
  *   --ci       : CI mode (silent check)
- *   (none)     : Full setup mode
+ *   (none)     : Full setup mode (or check-only if in npm lifecycle context)
  *
  * @returns {Promise<void>} Resolves when command completes
  */
 async function main() {
   const args = process.argv.slice(2);
-  const command = args[0];
+  let command = args[0];
+
+  // If running as npm lifecycle hook (e.g., 'npm install' triggering 'prepare'),
+  // automatically switch to check-only mode to avoid blocking prompts
+  if (!command && isNpmLifecycleContext()) {
+    const lifecycleEvent = process.env.npm_lifecycle_event;
+    log(`Running as npm lifecycle hook (${lifecycleEvent}), using check-only mode`, 'info');
+    command = '--check';
+  }
 
   try {
     switch (command) {
