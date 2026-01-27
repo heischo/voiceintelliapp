@@ -9,7 +9,7 @@ export type EnrichmentMode =
   | 'summary'
   | 'custom';
 
-export type OutputTarget = 'clipboard' | 'file';
+export type OutputTarget = 'clipboard' | 'file' | 'notion' | 'google_drive';
 
 export type LLMProvider = 'openai' | 'openrouter';
 
@@ -72,6 +72,13 @@ export interface LLMProviderConfig {
   apiKey: string;
   model?: string;
   baseUrl?: string;
+}
+
+export interface NotionSettings {
+  apiKey: string;
+  parentPageId?: string;    // Parent page ID for creating new pages
+  databaseId?: string;      // Database ID if exporting to a database
+  defaultTags?: string[];   // Default tags to apply to created pages
 }
 
 export interface AppState {
