@@ -1,247 +1,96 @@
-// PDF Generation Module - Handles PDF creation with Unicode font support
-// Uses jsPDF with embedded font for German/Norwegian character support
+// PDF Generation Module - Uses jsPDF for generating PDF documents
 
 import { jsPDF } from 'jspdf';
 
-// PDF configuration constants
-const PDF_CONFIG = {
-  pageWidth: 210, // A4 width in mm
-  pageHeight: 297, // A4 height in mm
-  marginLeft: 20,
-  marginRight: 20,
-  marginTop: 25,
-  marginBottom: 25,
-  fontSize: 11,
-  titleFontSize: 16,
-  lineHeight: 1.4,
-} as const;
-
-// Calculated content area
-const CONTENT_WIDTH = PDF_CONFIG.pageWidth - PDF_CONFIG.marginLeft - PDF_CONFIG.marginRight;
-const CONTENT_HEIGHT = PDF_CONFIG.pageHeight - PDF_CONFIG.marginTop - PDF_CONFIG.marginBottom;
-
-/**
- * Custom error class for PDF operations
- */
-export class PdfError extends Error {
-  constructor(
-    message: string,
-    public readonly cause?: unknown
-  ) {
-    super(message);
-    this.name = 'PdfError';
-  }
-}
-
-/**
- * Extracts a type-safe error message from an unknown error
- */
-function getErrorMessage(error: unknown): string {
-  if (error instanceof Error) {
-    return error.message;
-  }
-  if (typeof error === 'string') {
-    return error;
-  }
-  if (error && typeof error === 'object' && 'message' in error) {
-    return String((error as { message: unknown }).message);
-  }
-  return 'Unknown error occurred';
-}
-
-/**
- * Sanitizes text for PDF output
- * Handles special characters and normalizes whitespace
- */
-function sanitizeText(text: string): string {
-  return text
-    .replace(/\r\n/g, '\n') // Normalize line endings
-    .replace(/\r/g, '\n')
-    .replace(/\t/g, '    '); // Convert tabs to spaces
-}
-
-/**
- * Options for PDF generation
- */
-export interface PdfGenerateOptions {
-  /** Title to display at the top of the PDF */
+export interface PdfOptions {
   title?: string;
-  /** Include timestamp in header */
-  includeTimestamp?: boolean;
-  /** Custom filename (without extension) */
-  filename?: string;
+  fontSize?: number;
+  lineHeight?: number;
+  margins?: {
+    top: number;
+    right: number;
+    bottom: number;
+    left: number;
+  };
 }
 
-/**
- * Result of PDF generation
- */
-export interface PdfGenerateResult {
-  /** The generated PDF as a Blob */
-  blob: Blob;
-  /** Suggested filename for the PDF */
-  filename: string;
-  /** Number of pages in the PDF */
-  pageCount: number;
-}
+const DEFAULT_OPTIONS: Required<PdfOptions> = {
+  title: 'Transcript',
+  fontSize: 12,
+  lineHeight: 1.5,
+  margins: {
+    top: 20,
+    right: 20,
+    bottom: 20,
+    left: 20,
+  },
+};
 
 /**
- * Generates a PDF document from text content
- * Supports Unicode characters including German umlauts and Norwegian characters
- *
- * @param content - The text content to convert to PDF
- * @param options - Optional configuration for PDF generation
- * @returns Promise resolving to the generated PDF result
+ * Generates a PDF document from the provided content
+ * @param content - The text content to include in the PDF
+ * @param options - Optional PDF configuration
+ * @returns A jsPDF document instance
  */
-export async function generatePdf(
-  content: string,
-  options: PdfGenerateOptions = {}
-): Promise<PdfGenerateResult> {
-  // Validate input
-  if (content === null || content === undefined) {
-    throw new PdfError('Cannot generate PDF from null or undefined content');
-  }
+export function generatePdf(content: string, options?: PdfOptions): jsPDF {
+  const opts = { ...DEFAULT_OPTIONS, ...options };
 
-  if (typeof content !== 'string') {
-    throw new PdfError('PDF content must be a string');
-  }
-
-  if (content.trim().length === 0) {
-    throw new PdfError('Cannot generate PDF from empty content');
-  }
-
-  try {
-    // Create PDF document in A4 format
-    const doc = new jsPDF({
-      orientation: 'portrait',
-      unit: 'mm',
-      format: 'a4',
-      putOnlyUsedFonts: true,
-    });
-
-    // Use Helvetica as base font - it has limited but sufficient Unicode support
-    // For full Unicode support, a custom font would need to be embedded
-    // jsPDF's Helvetica handles common Western European characters reasonably well
-    doc.setFont('helvetica', 'normal');
-
-    let currentY = PDF_CONFIG.marginTop;
-    let pageNumber = 1;
-
-    // Add title if provided
-    if (options.title) {
-      doc.setFontSize(PDF_CONFIG.titleFontSize);
-      doc.setFont('helvetica', 'bold');
-
-      const titleLines = doc.splitTextToSize(options.title, CONTENT_WIDTH);
-      doc.text(titleLines, PDF_CONFIG.marginLeft, currentY);
-      currentY += titleLines.length * (PDF_CONFIG.titleFontSize * 0.35) + 5;
-
-      doc.setFont('helvetica', 'normal');
-    }
-
-    // Add timestamp if requested
-    if (options.includeTimestamp) {
-      doc.setFontSize(9);
-      doc.setTextColor(128, 128, 128);
-      const timestamp = new Date().toLocaleString('de-DE', {
-        year: 'numeric',
-        month: '2-digit',
-        day: '2-digit',
-        hour: '2-digit',
-        minute: '2-digit',
-      });
-      doc.text(`Generated: ${timestamp}`, PDF_CONFIG.marginLeft, currentY);
-      currentY += 8;
-      doc.setTextColor(0, 0, 0);
-    }
-
-    // Set up content font
-    doc.setFontSize(PDF_CONFIG.fontSize);
-
-    // Sanitize and process content
-    const sanitizedContent = sanitizeText(content);
-
-    // Split content into lines that fit the page width
-    const lines = doc.splitTextToSize(sanitizedContent, CONTENT_WIDTH);
-    const lineHeight = PDF_CONFIG.fontSize * PDF_CONFIG.lineHeight * 0.35; // Convert to mm
-
-    // Add content with pagination
-    for (const line of lines) {
-      // Check if we need a new page
-      if (currentY + lineHeight > PDF_CONFIG.pageHeight - PDF_CONFIG.marginBottom) {
-        // Add page number footer before creating new page
-        addPageFooter(doc, pageNumber);
-
-        doc.addPage();
-        pageNumber++;
-        currentY = PDF_CONFIG.marginTop;
-      }
-
-      // Add the line
-      doc.text(line, PDF_CONFIG.marginLeft, currentY);
-      currentY += lineHeight;
-    }
-
-    // Add footer to the last page
-    addPageFooter(doc, pageNumber);
-
-    // Generate filename
-    const baseFilename = options.filename || `transcript-${Date.now()}`;
-    const filename = `${baseFilename}.pdf`;
-
-    // Get the PDF as a blob
-    const blob = doc.output('blob');
-
-    return {
-      blob,
-      filename,
-      pageCount: pageNumber,
-    };
-  } catch (error) {
-    const errorMessage = getErrorMessage(error);
-    throw new PdfError(`Failed to generate PDF: ${errorMessage}`, error);
-  }
-}
-
-/**
- * Adds a page footer with page number
- */
-function addPageFooter(doc: jsPDF, pageNumber: number): void {
-  const pageText = `Page ${pageNumber}`;
-  doc.setFontSize(9);
-  doc.setTextColor(128, 128, 128);
-  doc.text(
-    pageText,
-    PDF_CONFIG.pageWidth / 2,
-    PDF_CONFIG.pageHeight - 10,
-    { align: 'center' }
-  );
-  doc.setTextColor(0, 0, 0);
-  doc.setFontSize(PDF_CONFIG.fontSize);
-}
-
-/**
- * Converts PDF blob to base64 string
- * Useful for storing or transmitting the PDF
- */
-export async function pdfBlobToBase64(blob: Blob): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onloadend = () => {
-      const base64 = reader.result as string;
-      // Remove data URL prefix if present
-      const base64Content = base64.split(',')[1] || base64;
-      resolve(base64Content);
-    };
-    reader.onerror = () => reject(new PdfError('Failed to convert PDF to base64'));
-    reader.readAsDataURL(blob);
+  const doc = new jsPDF({
+    orientation: 'portrait',
+    unit: 'mm',
+    format: 'a4',
   });
+
+  const pageWidth = doc.internal.pageSize.getWidth();
+  const pageHeight = doc.internal.pageSize.getHeight();
+  const contentWidth = pageWidth - opts.margins.left - opts.margins.right;
+
+  // Add title
+  if (opts.title) {
+    doc.setFontSize(opts.fontSize + 4);
+    doc.setFont('helvetica', 'bold');
+    doc.text(opts.title, opts.margins.left, opts.margins.top);
+  }
+
+  // Add content
+  doc.setFontSize(opts.fontSize);
+  doc.setFont('helvetica', 'normal');
+
+  const startY = opts.title ? opts.margins.top + 10 : opts.margins.top;
+  const lines = doc.splitTextToSize(content, contentWidth);
+
+  let currentY = startY;
+  const lineSpacing = opts.fontSize * 0.352778 * opts.lineHeight; // Convert pt to mm
+
+  for (const line of lines) {
+    if (currentY + lineSpacing > pageHeight - opts.margins.bottom) {
+      doc.addPage();
+      currentY = opts.margins.top;
+    }
+    doc.text(line, opts.margins.left, currentY);
+    currentY += lineSpacing;
+  }
+
+  return doc;
 }
 
 /**
- * Gets the raw PDF data as Uint8Array
- * Useful for writing directly to file system
+ * Converts a PDF document to a Uint8Array for file writing
+ * @param doc - The jsPDF document instance
+ * @returns Uint8Array containing the PDF binary data
  */
-export async function pdfBlobToUint8Array(blob: Blob): Promise<Uint8Array> {
-  const arrayBuffer = await blob.arrayBuffer();
+export function pdfToUint8Array(doc: jsPDF): Uint8Array {
+  const arrayBuffer = doc.output('arraybuffer');
   return new Uint8Array(arrayBuffer);
+}
+
+/**
+ * Generates a PDF and returns it as a Uint8Array
+ * @param content - The text content to include in the PDF
+ * @param options - Optional PDF configuration
+ * @returns Uint8Array containing the PDF binary data
+ */
+export function generatePdfAsBytes(content: string, options?: PdfOptions): Uint8Array {
+  const doc = generatePdf(content, options);
+  return pdfToUint8Array(doc);
 }

@@ -6,8 +6,22 @@ import { writeText, readText } from '@tauri-apps/plugin-clipboard-manager';
 import { register, unregister, isRegistered } from '@tauri-apps/plugin-global-shortcut';
 import { Store } from '@tauri-apps/plugin-store';
 import { save } from '@tauri-apps/plugin-dialog';
-import { writeTextFile, readTextFile, exists, mkdir, BaseDirectory } from '@tauri-apps/plugin-fs';
-import type { Settings, WhisperModel, DownloadProgress, DownloadResult } from '../types';
+import { writeTextFile, writeFile, readTextFile, exists, mkdir, BaseDirectory } from '@tauri-apps/plugin-fs';
+import type { Settings, NotionSettings } from '../types';
+import { generatePdfAsBytes, type PdfOptions } from './pdf';
+import {
+  NotionClient,
+  NotionError,
+  createPage,
+  validateApiKey,
+  validateApiKeyFormat,
+  type CreatePageOptions,
+  type CreatePageResult,
+} from './notion';
+
+// Re-export Notion types and classes for external use
+export { NotionError };
+export type { CreatePageOptions, CreatePageResult };
 
 // Store instance for non-sensitive settings
 let store: Store | null = null;
@@ -131,6 +145,36 @@ export async function saveToFile(
   }
 }
 
+export async function saveAsPdf(
+  content: string,
+  suggestedName?: string,
+  options?: PdfOptions
+): Promise<string | null> {
+  try {
+    if (!content || content.trim().length === 0) {
+      throw new Error('Cannot save empty content as PDF');
+    }
+
+    const filePath = await save({
+      defaultPath: suggestedName || `transcript-${Date.now()}.pdf`,
+      filters: [
+        { name: 'PDF', extensions: ['pdf'] },
+        { name: 'All Files', extensions: ['*'] },
+      ],
+    });
+
+    if (filePath) {
+      const pdfBytes = generatePdfAsBytes(content, options);
+      await writeFile(filePath, pdfBytes);
+      return filePath;
+    }
+    return null;
+  } catch (error) {
+    console.error('Failed to save PDF:', error);
+    throw error;
+  }
+}
+
 export async function saveToAppData(
   filename: string,
   content: string
@@ -161,6 +205,71 @@ export async function readFromAppData(filename: string): Promise<string | null> 
     console.error('Failed to read from app data:', error);
     return null;
   }
+}
+
+// ============================================
+// Notion Integration
+// ============================================
+
+export interface ExportToNotionOptions {
+  title?: string;
+  parentPageId?: string;
+  databaseId?: string;
+}
+
+export async function exportToNotion(
+  content: string,
+  apiKey: string,
+  options?: ExportToNotionOptions
+): Promise<CreatePageResult> {
+  try {
+    if (!content || content.trim().length === 0) {
+      throw new NotionError('Cannot export empty content to Notion', 'EMPTY_CONTENT');
+    }
+
+    if (!apiKey) {
+      throw new NotionError('Notion API key is required', 'MISSING_API_KEY');
+    }
+
+    const settings: NotionSettings = {
+      apiKey,
+      parentPageId: options?.parentPageId,
+      databaseId: options?.databaseId,
+    };
+
+    const createOptions: CreatePageOptions = {
+      title: options?.title || `Transcript - ${new Date().toLocaleString()}`,
+      content,
+      parentPageId: options?.parentPageId,
+      databaseId: options?.databaseId,
+    };
+
+    const result = await createPage(settings, createOptions);
+    return result;
+  } catch (error) {
+    if (error instanceof NotionError) {
+      console.error('Notion export error:', error.message);
+      throw error;
+    }
+    console.error('Failed to export to Notion:', error);
+    throw new NotionError(
+      `Failed to export to Notion: ${error instanceof Error ? error.message : 'Unknown error'}`,
+      'EXPORT_FAILED'
+    );
+  }
+}
+
+export async function validateNotionApiKey(apiKey: string): Promise<boolean> {
+  try {
+    return await validateApiKey(apiKey);
+  } catch (error) {
+    console.error('Failed to validate Notion API key:', error);
+    throw error;
+  }
+}
+
+export function isNotionApiKeyFormatValid(apiKey: string): boolean {
+  return validateApiKeyFormat(apiKey);
 }
 
 // ============================================
@@ -313,46 +422,4 @@ export async function cleanupOldHistory(retentionDays: number): Promise<void> {
   } catch (error) {
     console.error('Failed to cleanup old history:', error);
   }
-}
-
-// ============================================
-// Offline Components / Model Management
-// ============================================
-
-export async function getAvailableModels(): Promise<WhisperModel[]> {
-  try {
-    return await invoke<WhisperModel[]>('get_available_models');
-  } catch (error) {
-    console.error('Failed to get available models:', error);
-    return [];
-  }
-}
-
-export async function downloadWhisperModel(modelId: string): Promise<DownloadResult> {
-  try {
-    return await invoke<DownloadResult>('download_whisper_model', { modelId });
-  } catch (error) {
-    console.error('Failed to download whisper model:', error);
-    return {
-      success: false,
-      message: error instanceof Error ? error.message : 'Unknown error occurred',
-    };
-  }
-}
-
-export async function deleteWhisperModel(modelId: string): Promise<boolean> {
-  try {
-    return await invoke<boolean>('delete_whisper_model', { modelId });
-  } catch (error) {
-    console.error('Failed to delete whisper model:', error);
-    return false;
-  }
-}
-
-export async function onDownloadProgress(
-  callback: (progress: DownloadProgress) => void
-): Promise<UnlistenFn> {
-  return listen<DownloadProgress>('download-progress', (event) => {
-    callback(event.payload);
-  });
 }

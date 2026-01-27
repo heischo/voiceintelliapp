@@ -194,7 +194,7 @@ export default function Home() {
   };
 
   return (
-    <div className="min-h-screen bg-background">
+    <div className="min-h-screen bg-background flex flex-col">
       {/* Setup Wizard */}
       {showSetupWizard && (
         <SetupWizard
@@ -435,7 +435,7 @@ export default function Home() {
       </header>
 
       {/* Main Content */}
-      <main className="max-w-4xl mx-auto px-4 py-8">
+      <main className="flex-1 max-w-4xl mx-auto px-4 py-8 w-full">
         {/* Status Bar */}
         <div className="flex items-center justify-between mb-8">
           <div className="flex items-center gap-4">
