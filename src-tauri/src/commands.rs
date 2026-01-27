@@ -254,6 +254,131 @@ pub async fn check_ollama_available(base_url: Option<String>) -> OllamaCheckResu
     }
 }
 
+/// Information about an OLLAMA model
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct OllamaModel {
+    pub name: String,
+    pub model: String,
+    pub size: u64,
+    pub digest: String,
+    pub modified_at: String,
+}
+
+/// Result of getting OLLAMA models
+#[derive(Debug, Serialize, Deserialize)]
+pub struct OllamaModelsResult {
+    pub success: bool,
+    pub models: Vec<OllamaModel>,
+    pub error: Option<String>,
+}
+
+/// Get list of installed models from OLLAMA
+#[tauri::command]
+pub async fn get_ollama_models(base_url: Option<String>) -> OllamaModelsResult {
+    let url = base_url.unwrap_or_else(|| "http://localhost:11434".to_string());
+    let tags_endpoint = format!("{}/api/tags", url);
+
+    log::info!("Getting OLLAMA models from: {}", tags_endpoint);
+
+    // Create HTTP client with timeout
+    let client = match reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(10))
+        .build()
+    {
+        Ok(c) => c,
+        Err(e) => {
+            log::warn!("Failed to create HTTP client: {}", e);
+            return OllamaModelsResult {
+                success: false,
+                models: vec![],
+                error: Some(format!("Failed to create HTTP client: {}", e)),
+            };
+        }
+    };
+
+    // Query the OLLAMA tags endpoint
+    match client.get(&tags_endpoint).send().await {
+        Ok(response) => {
+            if response.status().is_success() {
+                match response.text().await {
+                    Ok(text) => {
+                        // Parse the JSON response
+                        match serde_json::from_str::<serde_json::Value>(&text) {
+                            Ok(json) => {
+                                let models = json.get("models")
+                                    .and_then(|m| m.as_array())
+                                    .map(|arr| {
+                                        arr.iter()
+                                            .filter_map(|m| {
+                                                Some(OllamaModel {
+                                                    name: m.get("name")?.as_str()?.to_string(),
+                                                    model: m.get("model")
+                                                        .and_then(|v| v.as_str())
+                                                        .unwrap_or_else(|| m.get("name").and_then(|v| v.as_str()).unwrap_or(""))
+                                                        .to_string(),
+                                                    size: m.get("size")
+                                                        .and_then(|v| v.as_u64())
+                                                        .unwrap_or(0),
+                                                    digest: m.get("digest")
+                                                        .and_then(|v| v.as_str())
+                                                        .unwrap_or("")
+                                                        .to_string(),
+                                                    modified_at: m.get("modified_at")
+                                                        .and_then(|v| v.as_str())
+                                                        .unwrap_or("")
+                                                        .to_string(),
+                                                })
+                                            })
+                                            .collect::<Vec<OllamaModel>>()
+                                    })
+                                    .unwrap_or_default();
+
+                                log::info!("Found {} OLLAMA models", models.len());
+                                OllamaModelsResult {
+                                    success: true,
+                                    models,
+                                    error: None,
+                                }
+                            }
+                            Err(e) => {
+                                log::warn!("Failed to parse OLLAMA response: {}", e);
+                                OllamaModelsResult {
+                                    success: false,
+                                    models: vec![],
+                                    error: Some(format!("Failed to parse response: {}", e)),
+                                }
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        log::warn!("Failed to read OLLAMA response: {}", e);
+                        OllamaModelsResult {
+                            success: false,
+                            models: vec![],
+                            error: Some(format!("Failed to read response: {}", e)),
+                        }
+                    }
+                }
+            } else {
+                log::warn!("OLLAMA responded with non-success status: {}", response.status());
+                OllamaModelsResult {
+                    success: false,
+                    models: vec![],
+                    error: Some(format!("OLLAMA responded with status: {}", response.status())),
+                }
+            }
+        }
+        Err(e) => {
+            log::info!("Failed to connect to OLLAMA: {}", e);
+            OllamaModelsResult {
+                success: false,
+                models: vec![],
+                error: Some(format!("Failed to connect to OLLAMA: {}", e)),
+            }
+        }
+    }
+}
+
 /// Transcribe audio using whisper.cpp
 #[tauri::command]
 pub async fn transcribe_audio(
