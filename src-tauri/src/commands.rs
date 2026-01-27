@@ -933,6 +933,163 @@ pub async fn download_whisper_model(
     })
 }
 
+/// Progress event for OLLAMA model pull
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct OllamaPullProgress {
+    pub model: String,
+    pub status: String,
+    pub digest: Option<String>,
+    pub total: Option<u64>,
+    pub completed: Option<u64>,
+    pub percentage: Option<f32>,
+}
+
+/// Result of OLLAMA model pull
+#[derive(Debug, Serialize, Deserialize)]
+pub struct OllamaPullResult {
+    pub success: bool,
+    pub message: String,
+    pub model: String,
+}
+
+/// Pull an OLLAMA model with streaming progress events
+#[tauri::command]
+pub async fn pull_ollama_model(
+    window: Window,
+    model: String,
+    base_url: Option<String>,
+) -> Result<OllamaPullResult, String> {
+    let url = base_url.unwrap_or_else(|| "http://localhost:11434".to_string());
+    let pull_endpoint = format!("{}/api/pull", url);
+
+    log::info!("Pulling OLLAMA model '{}' from: {}", model, pull_endpoint);
+
+    // Emit initial progress
+    let _ = window.emit("ollama-pull-progress", OllamaPullProgress {
+        model: model.clone(),
+        status: "starting".to_string(),
+        digest: None,
+        total: None,
+        completed: None,
+        percentage: None,
+    });
+
+    // Create HTTP client without timeout for long downloads
+    let client = reqwest::Client::builder()
+        .build()
+        .map_err(|e| format!("Failed to create HTTP client: {}", e))?;
+
+    // Prepare the request body
+    let body = serde_json::json!({ "name": model }).to_string();
+
+    // Send POST request to pull the model
+    let response = client
+        .post(&pull_endpoint)
+        .header("Content-Type", "application/json")
+        .body(body)
+        .send()
+        .await
+        .map_err(|e| format!("Failed to start model pull: {}", e))?;
+
+    if !response.status().is_success() {
+        let status = response.status();
+        let error_text = response.text().await.unwrap_or_default();
+        return Err(format!("Pull failed with status {}: {}", status, error_text));
+    }
+
+    // Stream the response and parse progress updates
+    let mut stream = response.bytes_stream();
+    let mut last_progress_update = std::time::Instant::now();
+    let mut final_status = String::new();
+
+    while let Some(chunk_result) = stream.next().await {
+        let chunk = chunk_result
+            .map_err(|e| format!("Stream error: {}", e))?;
+
+        // OLLAMA sends newline-delimited JSON
+        let chunk_str = String::from_utf8_lossy(&chunk);
+
+        for line in chunk_str.lines() {
+            if line.trim().is_empty() {
+                continue;
+            }
+
+            // Parse the JSON progress update
+            if let Ok(json) = serde_json::from_str::<serde_json::Value>(line) {
+                let status = json.get("status")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string();
+
+                final_status = status.clone();
+
+                // Check for error
+                if let Some(error) = json.get("error").and_then(|v| v.as_str()) {
+                    let _ = window.emit("ollama-pull-progress", OllamaPullProgress {
+                        model: model.clone(),
+                        status: "error".to_string(),
+                        digest: None,
+                        total: None,
+                        completed: None,
+                        percentage: None,
+                    });
+                    return Err(format!("Pull error: {}", error));
+                }
+
+                let digest = json.get("digest")
+                    .and_then(|v| v.as_str())
+                    .map(String::from);
+
+                let total = json.get("total")
+                    .and_then(|v| v.as_u64());
+
+                let completed = json.get("completed")
+                    .and_then(|v| v.as_u64());
+
+                // Calculate percentage if we have total and completed
+                let percentage = match (total, completed) {
+                    (Some(t), Some(c)) if t > 0 => Some((c as f32 / t as f32) * 100.0),
+                    _ => None,
+                };
+
+                // Emit progress every 100ms to avoid overwhelming the frontend
+                if last_progress_update.elapsed().as_millis() >= 100
+                    || status == "success"
+                    || status.contains("pulling")
+                    || status.contains("verifying") {
+                    let _ = window.emit("ollama-pull-progress", OllamaPullProgress {
+                        model: model.clone(),
+                        status: status.clone(),
+                        digest,
+                        total,
+                        completed,
+                        percentage,
+                    });
+                    last_progress_update = std::time::Instant::now();
+                }
+            }
+        }
+    }
+
+    // Emit completion progress
+    let _ = window.emit("ollama-pull-progress", OllamaPullProgress {
+        model: model.clone(),
+        status: "completed".to_string(),
+        digest: None,
+        total: None,
+        completed: None,
+        percentage: Some(100.0),
+    });
+
+    log::info!("Model '{}' pulled successfully", model);
+
+    Ok(OllamaPullResult {
+        success: true,
+        message: format!("Model '{}' pulled successfully. Final status: {}", model, final_status),
+        model,
+    })
+}
+
 /// Get the path to the whisper model
 fn get_model_path(model: &str, language: &str) -> Result<String, String> {
     // Use multilingual model for non-English languages
