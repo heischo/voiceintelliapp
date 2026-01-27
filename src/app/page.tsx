@@ -10,7 +10,7 @@ import { useRecording } from '../hooks/useRecording';
 import { useHotkey } from '../hooks/useHotkey';
 import { useLLM } from '../hooks/useLLM';
 import type { EnrichmentMode, OutputTarget } from '../types';
-import { addToHistory, getHistory, type HistoryItem } from '../lib/api';
+import { addToHistory, getHistory, getAppVersion, type HistoryItem } from '../lib/api';
 import { getSTTService } from '../services/stt';
 import { SetupWizard } from '../components/SetupWizard';
 
@@ -32,6 +32,7 @@ export default function Home() {
   const [isTranscribing, setIsTranscribing] = useState(false);
   const [transcriptionError, setTranscriptionError] = useState<string | null>(null);
   const [sttConfigured, setSTTConfigured] = useState<boolean | null>(null);
+  const [appVersion, setAppVersion] = useState<string>('');
 
   // Update local state when settings load
   useEffect(() => {
@@ -68,6 +69,11 @@ export default function Home() {
       }
     }
   }, [settings, settingsLoading, llm]);
+
+  // Fetch app version on mount
+  useEffect(() => {
+    getAppVersion().then(setAppVersion);
+  }, []);
 
   // Handle enrichment (defined early for use in handleStopRecording)
   const handleEnrich = useCallback(async (text?: string) => {
@@ -523,8 +529,9 @@ export default function Home() {
 
       {/* Footer */}
       <footer className="border-t border-secondary mt-auto">
-        <div className="max-w-4xl mx-auto px-4 py-4 text-center text-text-muted text-sm">
-          Voice Intelligence - Privacy-first voice processing
+        <div className="max-w-4xl mx-auto px-4 py-4 flex items-center justify-between text-text-muted text-sm">
+          <span>Voice Intelligence - Privacy-first voice processing</span>
+          {appVersion && <span>v{appVersion}</span>}
         </div>
       </footer>
     </div>
