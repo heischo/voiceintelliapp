@@ -14,6 +14,7 @@ export function HistoryView({ onReprocess }: HistoryViewProps) {
   const [isLoading, setIsLoading] = useState(true);
   const [selectedItem, setSelectedItem] = useState<HistoryItem | null>(null);
   const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [copyError, setCopyError] = useState<string | null>(null);
 
   useEffect(() => {
     loadHistory();
@@ -56,12 +57,17 @@ export function HistoryView({ onReprocess }: HistoryViewProps) {
   };
 
   const handleCopy = async (content: string, id: string) => {
+    // Clear any previous error state
+    setCopyError(null);
+
     try {
       await copyToClipboard(content);
       setCopiedId(id);
       setTimeout(() => setCopiedId(null), 2000);
     } catch (error) {
-      console.error('Failed to copy:', error);
+      // Set error state with the item id to show error feedback
+      setCopyError(id);
+      setTimeout(() => setCopyError(null), 3000);
     }
   };
 
@@ -165,9 +171,31 @@ export function HistoryView({ onReprocess }: HistoryViewProps) {
               <div className="flex gap-2">
                 <button
                   onClick={() => handleCopy(selectedItem.enrichedContent, selectedItem.id)}
-                  className="btn-secondary text-sm px-3 py-1.5"
+                  className={`text-sm px-3 py-1.5 rounded-lg transition-all flex items-center gap-1.5
+                    ${copiedId === selectedItem.id
+                      ? 'bg-success/20 text-success border border-success'
+                      : copyError === selectedItem.id
+                        ? 'bg-error/20 text-error border border-error'
+                        : 'btn-secondary'
+                    }`}
                 >
-                  {copiedId === selectedItem.id ? 'Copied!' : 'Copy'}
+                  {copiedId === selectedItem.id ? (
+                    <>
+                      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                      </svg>
+                      Copied!
+                    </>
+                  ) : copyError === selectedItem.id ? (
+                    <>
+                      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                      </svg>
+                      Failed
+                    </>
+                  ) : (
+                    'Copy'
+                  )}
                 </button>
                 <button
                   onClick={() => handleDelete(selectedItem.id)}
