@@ -39,10 +39,11 @@ export function RecordingOverlay({
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
         onCancel();
-      } else if (e.key === 'Enter' || e.key === ' ') {
+      } else if (e.key === 'Enter') {
         e.preventDefault();
         onStop();
       }
+      // Space is ignored - use hotkey or Enter to stop
     };
 
     if (state === 'recording') {
@@ -192,7 +193,8 @@ export function RecordingOverlay({
         {/* Keyboard hints */}
         {state === 'recording' && (
           <div className="text-text-muted text-xs">
-            Press <kbd className="px-2 py-1 bg-secondary rounded text-text">{formattedHotkey}</kbd> to stop,{' '}
+            Press <kbd className="px-2 py-1 bg-secondary rounded text-text">{formattedHotkey}</kbd> or{' '}
+            <kbd className="px-2 py-1 bg-secondary rounded text-text">Enter</kbd> to stop,{' '}
             <kbd className="px-2 py-1 bg-secondary rounded text-text">Esc</kbd> to cancel
           </div>
         )}
