@@ -179,6 +179,206 @@ pub fn verify_whisper_path(path: String) -> WhisperCheckResult {
     }
 }
 
+/// Result of OLLAMA service availability check
+#[derive(Debug, Serialize, Deserialize)]
+pub struct OllamaCheckResult {
+    pub available: bool,
+    pub version: Option<String>,
+    pub base_url: String,
+}
+
+/// Check if OLLAMA service is running via HTTP API
+#[tauri::command]
+pub async fn check_ollama_available(base_url: Option<String>) -> OllamaCheckResult {
+    let url = base_url.unwrap_or_else(|| "http://localhost:11434".to_string());
+    let version_endpoint = format!("{}/api/version", url);
+
+    log::info!("Checking OLLAMA availability at: {}", version_endpoint);
+
+    // Create HTTP client with timeout
+    let client = match reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(5))
+        .build()
+    {
+        Ok(c) => c,
+        Err(e) => {
+            log::warn!("Failed to create HTTP client: {}", e);
+            return OllamaCheckResult {
+                available: false,
+                version: None,
+                base_url: url,
+            };
+        }
+    };
+
+    // Try to reach the OLLAMA version endpoint
+    match client.get(&version_endpoint).send().await {
+        Ok(response) => {
+            if response.status().is_success() {
+                // Try to parse the version from the response text
+                let version = match response.text().await {
+                    Ok(text) => {
+                        match serde_json::from_str::<serde_json::Value>(&text) {
+                            Ok(json) => json.get("version")
+                                .and_then(|v| v.as_str())
+                                .map(String::from),
+                            Err(_) => None,
+                        }
+                    }
+                    Err(_) => None,
+                };
+
+                log::info!("OLLAMA is available, version: {:?}", version);
+                OllamaCheckResult {
+                    available: true,
+                    version,
+                    base_url: url,
+                }
+            } else {
+                log::warn!("OLLAMA responded with non-success status: {}", response.status());
+                OllamaCheckResult {
+                    available: false,
+                    version: None,
+                    base_url: url,
+                }
+            }
+        }
+        Err(e) => {
+            log::info!("OLLAMA is not available: {}", e);
+            OllamaCheckResult {
+                available: false,
+                version: None,
+                base_url: url,
+            }
+        }
+    }
+}
+
+/// Information about an OLLAMA model
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct OllamaModel {
+    pub name: String,
+    pub model: String,
+    pub size: u64,
+    pub digest: String,
+    pub modified_at: String,
+}
+
+/// Result of getting OLLAMA models
+#[derive(Debug, Serialize, Deserialize)]
+pub struct OllamaModelsResult {
+    pub success: bool,
+    pub models: Vec<OllamaModel>,
+    pub error: Option<String>,
+}
+
+/// Get list of installed models from OLLAMA
+#[tauri::command]
+pub async fn get_ollama_models(base_url: Option<String>) -> OllamaModelsResult {
+    let url = base_url.unwrap_or_else(|| "http://localhost:11434".to_string());
+    let tags_endpoint = format!("{}/api/tags", url);
+
+    log::info!("Getting OLLAMA models from: {}", tags_endpoint);
+
+    // Create HTTP client with timeout
+    let client = match reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(10))
+        .build()
+    {
+        Ok(c) => c,
+        Err(e) => {
+            log::warn!("Failed to create HTTP client: {}", e);
+            return OllamaModelsResult {
+                success: false,
+                models: vec![],
+                error: Some(format!("Failed to create HTTP client: {}", e)),
+            };
+        }
+    };
+
+    // Query the OLLAMA tags endpoint
+    match client.get(&tags_endpoint).send().await {
+        Ok(response) => {
+            if response.status().is_success() {
+                match response.text().await {
+                    Ok(text) => {
+                        // Parse the JSON response
+                        match serde_json::from_str::<serde_json::Value>(&text) {
+                            Ok(json) => {
+                                let models = json.get("models")
+                                    .and_then(|m| m.as_array())
+                                    .map(|arr| {
+                                        arr.iter()
+                                            .filter_map(|m| {
+                                                Some(OllamaModel {
+                                                    name: m.get("name")?.as_str()?.to_string(),
+                                                    model: m.get("model")
+                                                        .and_then(|v| v.as_str())
+                                                        .unwrap_or_else(|| m.get("name").and_then(|v| v.as_str()).unwrap_or(""))
+                                                        .to_string(),
+                                                    size: m.get("size")
+                                                        .and_then(|v| v.as_u64())
+                                                        .unwrap_or(0),
+                                                    digest: m.get("digest")
+                                                        .and_then(|v| v.as_str())
+                                                        .unwrap_or("")
+                                                        .to_string(),
+                                                    modified_at: m.get("modified_at")
+                                                        .and_then(|v| v.as_str())
+                                                        .unwrap_or("")
+                                                        .to_string(),
+                                                })
+                                            })
+                                            .collect::<Vec<OllamaModel>>()
+                                    })
+                                    .unwrap_or_default();
+
+                                log::info!("Found {} OLLAMA models", models.len());
+                                OllamaModelsResult {
+                                    success: true,
+                                    models,
+                                    error: None,
+                                }
+                            }
+                            Err(e) => {
+                                log::warn!("Failed to parse OLLAMA response: {}", e);
+                                OllamaModelsResult {
+                                    success: false,
+                                    models: vec![],
+                                    error: Some(format!("Failed to parse response: {}", e)),
+                                }
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        log::warn!("Failed to read OLLAMA response: {}", e);
+                        OllamaModelsResult {
+                            success: false,
+                            models: vec![],
+                            error: Some(format!("Failed to read response: {}", e)),
+                        }
+                    }
+                }
+            } else {
+                log::warn!("OLLAMA responded with non-success status: {}", response.status());
+                OllamaModelsResult {
+                    success: false,
+                    models: vec![],
+                    error: Some(format!("OLLAMA responded with status: {}", response.status())),
+                }
+            }
+        }
+        Err(e) => {
+            log::info!("Failed to connect to OLLAMA: {}", e);
+            OllamaModelsResult {
+                success: false,
+                models: vec![],
+                error: Some(format!("Failed to connect to OLLAMA: {}", e)),
+            }
+        }
+    }
+}
+
 /// Transcribe audio using whisper.cpp
 #[tauri::command]
 pub async fn transcribe_audio(
@@ -730,6 +930,226 @@ pub async fn download_whisper_model(
         success: true,
         message: format!("Model '{}' downloaded successfully", model_id),
         model_path: Some(model_path.to_string_lossy().to_string()),
+    })
+}
+
+/// Progress event for OLLAMA model pull
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct OllamaPullProgress {
+    pub model: String,
+    pub status: String,
+    pub digest: Option<String>,
+    pub total: Option<u64>,
+    pub completed: Option<u64>,
+    pub percentage: Option<f32>,
+}
+
+/// Result of OLLAMA model pull
+#[derive(Debug, Serialize, Deserialize)]
+pub struct OllamaPullResult {
+    pub success: bool,
+    pub message: String,
+    pub model: String,
+}
+
+/// Result of OLLAMA model deletion
+#[derive(Debug, Serialize, Deserialize)]
+pub struct OllamaDeleteResult {
+    pub success: bool,
+    pub message: String,
+    pub model: String,
+}
+
+/// Delete an OLLAMA model
+#[tauri::command]
+pub async fn delete_ollama_model(
+    model: String,
+    base_url: Option<String>,
+) -> Result<OllamaDeleteResult, String> {
+    let url = base_url.unwrap_or_else(|| "http://localhost:11434".to_string());
+    let delete_endpoint = format!("{}/api/delete", url);
+
+    log::info!("Deleting OLLAMA model '{}' via: {}", model, delete_endpoint);
+
+    // Create HTTP client with timeout
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(30))
+        .build()
+        .map_err(|e| format!("Failed to create HTTP client: {}", e))?;
+
+    // Prepare the request body
+    let body = serde_json::json!({ "name": model }).to_string();
+
+    // Send DELETE request to remove the model
+    let response = client
+        .delete(&delete_endpoint)
+        .header("Content-Type", "application/json")
+        .body(body)
+        .send()
+        .await
+        .map_err(|e| format!("Failed to send delete request: {}", e))?;
+
+    if response.status().is_success() {
+        log::info!("Model '{}' deleted successfully", model);
+        Ok(OllamaDeleteResult {
+            success: true,
+            message: format!("Model '{}' deleted successfully", model),
+            model,
+        })
+    } else {
+        let status = response.status();
+        let error_text = response.text().await.unwrap_or_default();
+
+        // Parse error message from OLLAMA response if possible
+        let error_msg = if let Ok(json) = serde_json::from_str::<serde_json::Value>(&error_text) {
+            json.get("error")
+                .and_then(|v| v.as_str())
+                .unwrap_or(&error_text)
+                .to_string()
+        } else {
+            error_text
+        };
+
+        log::warn!("Failed to delete model '{}': {} - {}", model, status, error_msg);
+        Err(format!("Failed to delete model: {}", error_msg))
+    }
+}
+
+/// Pull an OLLAMA model with streaming progress events
+#[tauri::command]
+pub async fn pull_ollama_model(
+    window: Window,
+    model: String,
+    base_url: Option<String>,
+) -> Result<OllamaPullResult, String> {
+    let url = base_url.unwrap_or_else(|| "http://localhost:11434".to_string());
+    let pull_endpoint = format!("{}/api/pull", url);
+
+    log::info!("Pulling OLLAMA model '{}' from: {}", model, pull_endpoint);
+
+    // Emit initial progress
+    let _ = window.emit("ollama-pull-progress", OllamaPullProgress {
+        model: model.clone(),
+        status: "starting".to_string(),
+        digest: None,
+        total: None,
+        completed: None,
+        percentage: None,
+    });
+
+    // Create HTTP client without timeout for long downloads
+    let client = reqwest::Client::builder()
+        .build()
+        .map_err(|e| format!("Failed to create HTTP client: {}", e))?;
+
+    // Prepare the request body
+    let body = serde_json::json!({ "name": model }).to_string();
+
+    // Send POST request to pull the model
+    let response = client
+        .post(&pull_endpoint)
+        .header("Content-Type", "application/json")
+        .body(body)
+        .send()
+        .await
+        .map_err(|e| format!("Failed to start model pull: {}", e))?;
+
+    if !response.status().is_success() {
+        let status = response.status();
+        let error_text = response.text().await.unwrap_or_default();
+        return Err(format!("Pull failed with status {}: {}", status, error_text));
+    }
+
+    // Stream the response and parse progress updates
+    let mut stream = response.bytes_stream();
+    let mut last_progress_update = std::time::Instant::now();
+    let mut final_status = String::new();
+
+    while let Some(chunk_result) = stream.next().await {
+        let chunk = chunk_result
+            .map_err(|e| format!("Stream error: {}", e))?;
+
+        // OLLAMA sends newline-delimited JSON
+        let chunk_str = String::from_utf8_lossy(&chunk);
+
+        for line in chunk_str.lines() {
+            if line.trim().is_empty() {
+                continue;
+            }
+
+            // Parse the JSON progress update
+            if let Ok(json) = serde_json::from_str::<serde_json::Value>(line) {
+                let status = json.get("status")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string();
+
+                final_status = status.clone();
+
+                // Check for error
+                if let Some(error) = json.get("error").and_then(|v| v.as_str()) {
+                    let _ = window.emit("ollama-pull-progress", OllamaPullProgress {
+                        model: model.clone(),
+                        status: "error".to_string(),
+                        digest: None,
+                        total: None,
+                        completed: None,
+                        percentage: None,
+                    });
+                    return Err(format!("Pull error: {}", error));
+                }
+
+                let digest = json.get("digest")
+                    .and_then(|v| v.as_str())
+                    .map(String::from);
+
+                let total = json.get("total")
+                    .and_then(|v| v.as_u64());
+
+                let completed = json.get("completed")
+                    .and_then(|v| v.as_u64());
+
+                // Calculate percentage if we have total and completed
+                let percentage = match (total, completed) {
+                    (Some(t), Some(c)) if t > 0 => Some((c as f32 / t as f32) * 100.0),
+                    _ => None,
+                };
+
+                // Emit progress every 100ms to avoid overwhelming the frontend
+                if last_progress_update.elapsed().as_millis() >= 100
+                    || status == "success"
+                    || status.contains("pulling")
+                    || status.contains("verifying") {
+                    let _ = window.emit("ollama-pull-progress", OllamaPullProgress {
+                        model: model.clone(),
+                        status: status.clone(),
+                        digest,
+                        total,
+                        completed,
+                        percentage,
+                    });
+                    last_progress_update = std::time::Instant::now();
+                }
+            }
+        }
+    }
+
+    // Emit completion progress
+    let _ = window.emit("ollama-pull-progress", OllamaPullProgress {
+        model: model.clone(),
+        status: "completed".to_string(),
+        digest: None,
+        total: None,
+        completed: None,
+        percentage: Some(100.0),
+    });
+
+    log::info!("Model '{}' pulled successfully", model);
+
+    Ok(OllamaPullResult {
+        success: true,
+        message: format!("Model '{}' pulled successfully. Final status: {}", model, final_status),
+        model,
     })
 }
 

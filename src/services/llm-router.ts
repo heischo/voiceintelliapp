@@ -5,6 +5,7 @@ import type { LLMProviderInterface, LLMCompletionRequest, LLMCompletionResponse 
 import { LLMProviderError } from '../types/llm';
 import { OpenAIProvider } from '../providers/openai';
 import { OpenRouterProvider } from '../providers/openrouter';
+import { OllamaProvider } from '../providers/ollama';
 
 export class LLMRouter {
   private providers: Map<string, LLMProviderInterface> = new Map();
@@ -15,6 +16,7 @@ export class LLMRouter {
     // Register default providers
     this.registerProvider(new OpenAIProvider());
     this.registerProvider(new OpenRouterProvider());
+    this.registerProvider(new OllamaProvider());
   }
 
   registerProvider(provider: LLMProviderInterface): void {
@@ -132,7 +134,24 @@ export class LLMRouter {
       provider.setApiKey(apiKey);
       if (model) provider.setModel(model);
       provider.setLanguage(this.language);
+    } else if (name === 'ollama' && provider instanceof OllamaProvider) {
+      // OLLAMA doesn't require an API key (local service)
+      // The apiKey parameter is ignored for OLLAMA
+      if (model) provider.setModel(model);
+      provider.setLanguage(this.language);
     }
+  }
+
+  // Configure OLLAMA provider with optional base URL
+  configureOllamaProvider(model?: string, baseUrl?: string): void {
+    const provider = this.providers.get('ollama');
+    if (!provider || !(provider instanceof OllamaProvider)) {
+      throw new Error('OLLAMA provider is not registered');
+    }
+
+    if (baseUrl) provider.setBaseUrl(baseUrl);
+    if (model) provider.setModel(model);
+    provider.setLanguage(this.language);
   }
 }
 

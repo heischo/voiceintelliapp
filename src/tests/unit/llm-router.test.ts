@@ -19,6 +19,12 @@ describe('LLM Router', () => {
       const providers = router.getAvailableProviders();
       expect(providers).toContain('openai');
     });
+
+    it('should have OLLAMA provider registered by default', () => {
+      const router = getLLMRouter();
+      const providers = router.getAvailableProviders();
+      expect(providers).toContain('ollama');
+    });
   });
 
   describe('provider management', () => {
@@ -34,6 +40,11 @@ describe('LLM Router', () => {
       expect(() => router.setDefaultProvider('openai')).not.toThrow();
     });
 
+    it('should set OLLAMA as default provider', () => {
+      const router = new LLMRouter();
+      expect(() => router.setDefaultProvider('ollama')).not.toThrow();
+    });
+
     it('should throw when setting non-existent default provider', () => {
       const router = new LLMRouter();
       expect(() => router.setDefaultProvider('nonexistent')).toThrow();
@@ -44,6 +55,13 @@ describe('LLM Router', () => {
       const provider = router.getProvider('openai');
       expect(provider).toBeDefined();
       expect(provider.name).toBe('openai');
+    });
+
+    it('should get OLLAMA provider by name', () => {
+      const router = new LLMRouter();
+      const provider = router.getProvider('ollama');
+      expect(provider).toBeDefined();
+      expect(provider.name).toBe('ollama');
     });
 
     it('should throw when getting non-existent provider', () => {
@@ -71,6 +89,40 @@ describe('LLM Router', () => {
         router.configureProvider('openai', 'test-api-key', 'gpt-4o-mini');
       }).not.toThrow();
     });
+
+    it('should configure OLLAMA provider without API key', () => {
+      const router = new LLMRouter();
+      expect(() => {
+        router.configureProvider('ollama', '', 'llama3.2');
+      }).not.toThrow();
+    });
+
+    it('should configure OLLAMA provider with model and base URL', () => {
+      const router = new LLMRouter();
+      expect(() => {
+        router.configureOllamaProvider('mistral', 'http://localhost:11434');
+      }).not.toThrow();
+    });
+
+    it('should configure OLLAMA provider with only model', () => {
+      const router = new LLMRouter();
+      expect(() => {
+        router.configureOllamaProvider('phi3');
+      }).not.toThrow();
+    });
+
+    it('should check if OLLAMA provider is configured', async () => {
+      const router = new LLMRouter();
+      const isConfigured = await router.isProviderConfigured('ollama');
+      expect(typeof isConfigured).toBe('boolean');
+    });
+
+    it('should return false for unconfigured OLLAMA provider when service not running', async () => {
+      const router = new LLMRouter();
+      // OLLAMA isConfigured checks if service is reachable, which it won't be in test
+      const isConfigured = await router.isProviderConfigured('ollama');
+      expect(isConfigured).toBe(false);
+    });
   });
 
   describe('enrichment', () => {
@@ -83,6 +135,25 @@ describe('LLM Router', () => {
 
     it('should throw with helpful message when API key missing', async () => {
       const router = new LLMRouter();
+      try {
+        await router.enrich('test transcript', 'clean-transcript');
+      } catch (error) {
+        expect(error).toBeInstanceOf(LLMProviderError);
+        expect((error as LLMProviderError).code).toBe('NOT_CONFIGURED');
+      }
+    });
+
+    it('should throw when OLLAMA provider is not configured', async () => {
+      const router = new LLMRouter();
+      router.setDefaultProvider('ollama');
+      await expect(
+        router.enrich('test transcript', 'clean-transcript')
+      ).rejects.toThrow(LLMProviderError);
+    });
+
+    it('should throw with helpful message when OLLAMA service not running', async () => {
+      const router = new LLMRouter();
+      router.setDefaultProvider('ollama');
       try {
         await router.enrich('test transcript', 'clean-transcript');
       } catch (error) {

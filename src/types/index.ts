@@ -11,7 +11,7 @@ export type EnrichmentMode =
 
 export type OutputTarget = 'clipboard' | 'file' | 'notion' | 'google_drive';
 
-export type LLMProvider = 'openai' | 'openrouter';
+export type LLMProvider = 'openai' | 'openrouter' | 'ollama';
 
 export type Language = 'en' | 'de' | 'no';
 
@@ -41,6 +41,8 @@ export interface Settings {
   openaiApiKey?: string;
   openrouterApiKey?: string;
   notionApiKey?: string;
+  // Ollama settings
+  ollamaModel?: string;
   // Microphone
   selectedMicrophone?: string;
   // Whisper

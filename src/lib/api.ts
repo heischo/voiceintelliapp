@@ -22,6 +22,7 @@ import {
 // Re-export Notion types and classes for external use
 export { NotionError };
 export type { CreatePageOptions, CreatePageResult };
+import type { OllamaServiceStatus, OllamaModel, OllamaPullProgress } from '../types/llm';
 
 // Store instance for non-sensitive settings
 let store: Store | null = null;
@@ -422,4 +423,103 @@ export async function cleanupOldHistory(retentionDays: number): Promise<void> {
   } catch (error) {
     console.error('Failed to cleanup old history:', error);
   }
+}
+
+// ============================================
+// Offline Components / Model Management
+// ============================================
+
+export async function getAvailableModels(): Promise<WhisperModel[]> {
+  try {
+    return await invoke<WhisperModel[]>('get_available_models');
+  } catch (error) {
+    console.error('Failed to get available models:', error);
+    return [];
+  }
+}
+
+export async function downloadWhisperModel(modelId: string): Promise<DownloadResult> {
+  try {
+    return await invoke<DownloadResult>('download_whisper_model', { modelId });
+  } catch (error) {
+    console.error('Failed to download whisper model:', error);
+    return {
+      success: false,
+      message: error instanceof Error ? error.message : 'Unknown error occurred',
+    };
+  }
+}
+
+export async function deleteWhisperModel(modelId: string): Promise<boolean> {
+  try {
+    return await invoke<boolean>('delete_whisper_model', { modelId });
+  } catch (error) {
+    console.error('Failed to delete whisper model:', error);
+    return false;
+  }
+}
+
+export async function onDownloadProgress(
+  callback: (progress: DownloadProgress) => void
+): Promise<UnlistenFn> {
+  return listen<DownloadProgress>('download-progress', (event) => {
+    callback(event.payload);
+  });
+}
+
+// ============================================
+// OLLAMA Management
+// ============================================
+
+export async function checkOllamaAvailable(): Promise<OllamaServiceStatus> {
+  try {
+    return await invoke<OllamaServiceStatus>('check_ollama_available');
+  } catch (error) {
+    console.error('Failed to check OLLAMA availability:', error);
+    return {
+      available: false,
+      version: null,
+      baseUrl: 'http://localhost:11434',
+    };
+  }
+}
+
+export async function getOllamaModels(): Promise<OllamaModel[]> {
+  try {
+    const result = await invoke<{ models: OllamaModel[] }>('get_ollama_models');
+    return result.models || [];
+  } catch (error) {
+    console.error('Failed to get OLLAMA models:', error);
+    return [];
+  }
+}
+
+export async function pullOllamaModel(modelName: string): Promise<{ success: boolean; message?: string }> {
+  try {
+    return await invoke<{ success: boolean; message?: string }>('pull_ollama_model', { modelName });
+  } catch (error) {
+    console.error('Failed to pull OLLAMA model:', error);
+    return {
+      success: false,
+      message: error instanceof Error ? error.message : 'Unknown error occurred',
+    };
+  }
+}
+
+export async function deleteOllamaModel(modelName: string): Promise<boolean> {
+  try {
+    const result = await invoke<{ success: boolean }>('delete_ollama_model', { modelName });
+    return result.success;
+  } catch (error) {
+    console.error('Failed to delete OLLAMA model:', error);
+    return false;
+  }
+}
+
+export async function onOllamaPullProgress(
+  callback: (progress: OllamaPullProgress) => void
+): Promise<UnlistenFn> {
+  return listen<OllamaPullProgress>('ollama-pull-progress', (event) => {
+    callback(event.payload);
+  });
 }
