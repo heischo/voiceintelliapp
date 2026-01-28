@@ -34,13 +34,16 @@ export default function Home() {
   const [transcriptionError, setTranscriptionError] = useState<string | null>(null);
   const [sttConfigured, setSTTConfigured] = useState<boolean | null>(null);
   const [appVersion, setAppVersion] = useState<string>('');
+  const [settingsInitialized, setSettingsInitialized] = useState(false);
+  const [hasCompletedAction, setHasCompletedAction] = useState(false);
 
-  // Update local state when settings load
+  // Update local state when settings load (only on first load)
   useEffect(() => {
-    if (!settingsLoading) {
+    if (!settingsLoading && !settingsInitialized) {
       setEnrichmentMode(settings.enrichmentMode);
       setOutputTarget(settings.outputTarget);
       setCustomPrompt(settings.customPrompt || '');
+      setSettingsInitialized(true);
       llm.setLanguage(settings.language);
 
       // Configure LLM provider with API key
@@ -48,16 +51,25 @@ export default function Home() {
         llm.configureProvider('openai', settings.openaiApiKey, settings.llmModel);
       } else if (settings.llmProvider === 'openrouter' && settings.openrouterApiKey) {
         llm.configureProvider('openrouter', settings.openrouterApiKey, settings.llmModel);
+      } else if (settings.llmProvider === 'ollama' && settings.ollamaModel) {
+        // Ollama doesn't need an API key (local service), just configure the model
+        llm.configureProvider('ollama', '', settings.ollamaModel);
       }
 
       // Check if STT is configured
       const checkSTT = async () => {
         const sttService = getSTTService();
-        if (settings.openaiApiKey) {
-          sttService.configureOpenAI(settings.openaiApiKey);
+        // Use dedicated Whisper API key, fallback to OpenAI key for backwards compatibility
+        const whisperApiKey = settings.openaiWhisperApiKey || settings.openaiApiKey;
+        if (whisperApiKey) {
+          sttService.configureOpenAI(whisperApiKey);
         }
         if (settings.whisperPath) {
           sttService.configureWhisperPath(settings.whisperPath);
+        }
+        // Configure whisper model if set
+        if (settings.whisperModel) {
+          sttService.configureWhisperModel(settings.whisperModel);
         }
         const provider = await sttService.getAvailableProvider();
         setSTTConfigured(provider !== null);
@@ -69,7 +81,7 @@ export default function Home() {
         setShowSetupWizard(true);
       }
     }
-  }, [settings, settingsLoading, llm]);
+  }, [settings, settingsLoading, settingsInitialized, llm]);
 
   // Fetch app version on mount
   useEffect(() => {
@@ -130,10 +142,15 @@ export default function Home() {
       // Use the STT service for actual transcription
       const sttService = getSTTService();
 
-      // Configure OpenAI API key if available
-      const openaiKey = settings.openaiApiKey;
-      if (openaiKey) {
-        sttService.configureOpenAI(openaiKey);
+      // Configure OpenAI Whisper API key if available (use dedicated key, fallback to general OpenAI key)
+      const whisperApiKey = settings.openaiWhisperApiKey || settings.openaiApiKey;
+      if (whisperApiKey) {
+        sttService.configureOpenAI(whisperApiKey);
+      }
+
+      // Configure whisper model if set
+      if (settings.whisperModel) {
+        sttService.configureWhisperModel(settings.whisperModel);
       }
 
       const result = await sttService.transcribe(audioBlob, settings.language);
@@ -156,11 +173,17 @@ export default function Home() {
   // Hotkey handler
   const handleHotkey = useCallback(() => {
     if (recording.state === 'idle') {
+      // Clear old transcript when starting new recording via hotkey
+      if (transcript) {
+        setTranscript(null);
+        setEnrichedContent(null);
+        setHasCompletedAction(false);
+      }
       recording.startRecording();
     } else if (recording.state === 'recording') {
       handleStopRecording();
     }
-  }, [recording, handleStopRecording]);
+  }, [recording, handleStopRecording, transcript]);
 
   // Register hotkey
   const hotkey = useHotkey(settings.hotkey, handleHotkey);
@@ -170,6 +193,30 @@ export default function Home() {
     setShowTranscriptModal(false);
     setTranscript(null);
     setEnrichedContent(null);
+    setHasCompletedAction(false);
+    recording.startRecording();
+  };
+
+  // Handle closing transcript modal (reset for next time)
+  const handleCloseTranscript = () => {
+    setShowTranscriptModal(false);
+  };
+
+  // Handle starting fresh (clear transcript and go back to main)
+  const handleStartFresh = () => {
+    setShowTranscriptModal(false);
+    setTranscript(null);
+    setEnrichedContent(null);
+    setHasCompletedAction(false);
+  };
+
+  // Handle starting a new recording (clears old transcript if exists)
+  const handleStartRecording = () => {
+    if (transcript) {
+      setTranscript(null);
+      setEnrichedContent(null);
+      setHasCompletedAction(false);
+    }
     recording.startRecording();
   };
 
@@ -327,6 +374,7 @@ export default function Home() {
                     onChange={setEnrichmentMode}
                     customPrompt={customPrompt}
                     onCustomPromptChange={setCustomPrompt}
+                    onCustomPromptSubmit={() => handleEnrich()}
                     disabled={isEnriching}
                   />
                   <OutputRouter
@@ -334,6 +382,7 @@ export default function Home() {
                     onChange={setOutputTarget}
                     content={enrichedContent || undefined}
                     disabled={isEnriching}
+                    onActionComplete={() => setHasCompletedAction(true)}
                   />
                 </div>
 
@@ -378,14 +427,31 @@ export default function Home() {
                 )}
               </div>
 
-              {/* Modal Footer with Cancel button */}
-              <div className="border-t border-secondary px-6 py-4 flex justify-end">
-                <button
-                  onClick={() => setShowTranscriptModal(false)}
-                  className="btn-secondary px-6 py-2"
-                >
-                  Cancel
-                </button>
+              {/* Modal Footer */}
+              <div className="border-t border-secondary px-6 py-4 flex justify-end gap-3">
+                {hasCompletedAction ? (
+                  <>
+                    <button
+                      onClick={handleStartFresh}
+                      className="btn-secondary px-6 py-2"
+                    >
+                      Start Fresh
+                    </button>
+                    <button
+                      onClick={handleCloseTranscript}
+                      className="btn-primary px-6 py-2"
+                    >
+                      Done
+                    </button>
+                  </>
+                ) : (
+                  <button
+                    onClick={handleCloseTranscript}
+                    className="btn-secondary px-6 py-2"
+                  >
+                    Cancel
+                  </button>
+                )}
               </div>
             </div>
           </div>
@@ -475,7 +541,7 @@ export default function Home() {
         {recording.state === 'idle' && !transcript && !isTranscribing && (
           <div className="flex flex-col items-center py-16">
             <button
-              onClick={recording.startRecording}
+              onClick={handleStartRecording}
               className="w-32 h-32 rounded-full bg-primary hover:bg-primary/90
                 transition-all duration-300 flex items-center justify-center
                 shadow-lg hover:shadow-primary/30 hover:scale-105 active:scale-95"
@@ -573,14 +639,38 @@ export default function Home() {
           </div>
         )}
 
-        {/* Results Section - Placeholder when transcript exists but modal is closed */}
+        {/* Results Section - When transcript exists but modal is closed */}
         {transcript && !showTranscriptModal && (
           <div className="flex flex-col items-center py-16">
+            {/* Recording Button */}
+            <button
+              onClick={handleStartRecording}
+              className="w-32 h-32 rounded-full bg-primary hover:bg-primary/90
+                transition-all duration-300 flex items-center justify-center
+                shadow-lg hover:shadow-primary/30 hover:scale-105 active:scale-95"
+            >
+              <svg className="w-16 h-16 text-secondary" fill="currentColor" viewBox="0 0 24 24">
+                <path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3z" />
+                <path d="M17 11c0 2.76-2.24 5-5 5s-5-2.24-5-5H5c0 3.53 2.61 6.43 6 6.92V21h2v-3.08c3.39-.49 6-3.39 6-6.92h-2z" />
+              </svg>
+            </button>
+            <p className="mt-6 text-text-muted">Click to start new recording</p>
+            <p className="text-sm text-text-muted mt-2">
+              or press{' '}
+              <kbd className="px-2 py-1 bg-secondary rounded text-text text-xs">
+                {settings.hotkey.replace('CommandOrControl', 'Ctrl')}
+              </kbd>
+            </p>
+
+            {/* View previous transcript link */}
             <button
               onClick={() => setShowTranscriptModal(true)}
-              className="btn-primary px-6 py-3"
+              className="mt-8 text-sm text-primary hover:text-primary/80 flex items-center gap-2"
             >
-              View Transcript
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+              </svg>
+              View previous transcript
             </button>
           </div>
         )}

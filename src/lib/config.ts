@@ -12,6 +12,7 @@ export const DEFAULT_SETTINGS: Settings = {
   llmModel: 'gpt-4o-mini',
   autoEnrich: true,
   showNotifications: true,
+  whisperModel: 'base',
 };
 
 export const HOTKEY_MODIFIERS = [
@@ -118,6 +119,14 @@ export const RETENTION_OPTIONS = [
   { value: 7, label: '7 days' },
   { value: 14, label: '14 days' },
   { value: 30, label: '30 days' },
+];
+
+export type FileFormat = 'markdown' | 'pdf' | 'txt';
+
+export const FILE_FORMATS: { value: FileFormat; label: string }[] = [
+  { value: 'markdown', label: 'Markdown' },
+  { value: 'pdf', label: 'PDF' },
+  { value: 'txt', label: 'Plain Text' },
 ];
 
 // Recording constraints

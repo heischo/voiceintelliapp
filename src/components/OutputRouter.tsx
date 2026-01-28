@@ -10,6 +10,7 @@ interface OutputRouterProps {
   onChange: (target: OutputTarget) => void;
   content?: string;
   disabled?: boolean;
+  onActionComplete?: () => void;
 }
 
 export function OutputRouter({
@@ -17,6 +18,7 @@ export function OutputRouter({
   onChange,
   content,
   disabled = false,
+  onActionComplete,
 }: OutputRouterProps) {
   const [status, setStatus] = useState<'idle' | 'success' | 'error'>('idle');
   const [statusMessage, setStatusMessage] = useState('');
@@ -32,6 +34,7 @@ export function OutputRouter({
         await copyToClipboard(content);
         setStatus('success');
         setStatusMessage('Copied to clipboard!');
+        onActionComplete?.();
       } else if (value === 'file') {
         const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
 
@@ -41,6 +44,15 @@ export function OutputRouter({
           if (path) {
             setStatus('success');
             setStatusMessage(`Saved PDF to ${path}`);
+            onActionComplete?.();
+          }
+        } else if (fileFormat === 'txt') {
+          const filename = `transcript-${timestamp}.txt`;
+          const path = await saveToFile(content, filename);
+          if (path) {
+            setStatus('success');
+            setStatusMessage(`Saved to ${path}`);
+            onActionComplete?.();
           }
         } else {
           const filename = `transcript-${timestamp}.md`;
@@ -48,6 +60,7 @@ export function OutputRouter({
           if (path) {
             setStatus('success');
             setStatusMessage(`Saved to ${path}`);
+            onActionComplete?.();
           }
         }
       } else if (value === 'notion') {
@@ -70,6 +83,7 @@ export function OutputRouter({
         if (result.success) {
           setStatus('success');
           setStatusMessage(result.url ? `Exported to Notion` : 'Exported to Notion!');
+          onActionComplete?.();
         } else {
           setStatus('error');
           setStatusMessage(result.error || 'Failed to export to Notion');
@@ -117,7 +131,9 @@ export function OutputRouter({
       case 'clipboard':
         return 'Copy to Clipboard';
       case 'file':
-        return fileFormat === 'pdf' ? 'Save as PDF' : 'Save as Markdown';
+        if (fileFormat === 'pdf') return 'Save as PDF';
+        if (fileFormat === 'txt') return 'Save as Text';
+        return 'Save as Markdown';
       case 'notion':
         return 'Export to Notion';
       case 'google_drive':

@@ -428,3 +428,95 @@ export async function onOllamaPullProgress(
     callback(event.payload);
   });
 }
+
+// ============================================
+// Notion Export
+// ============================================
+
+export interface ExportToNotionOptions {
+  title?: string;
+  parentPageId?: string;
+  databaseId?: string;
+}
+
+/**
+ * Export content to Notion
+ * Uses the default page ID from settings if no specific parent is provided
+ */
+export async function exportToNotion(
+  content: string,
+  apiKey: string,
+  options: ExportToNotionOptions = {}
+): Promise<CreatePageResult> {
+  const { title = 'Transcript', parentPageId, databaseId } = options;
+
+  // If no specific parent is provided, get the default from settings
+  let targetPageId = parentPageId;
+  let targetDatabaseId = databaseId;
+
+  if (!targetPageId && !targetDatabaseId) {
+    const settings = await getSettings();
+    if (settings?.notionDefaultPageId) {
+      // Determine if it's a page or database based on how it was stored
+      // For simplicity, we'll try as page first
+      targetPageId = settings.notionDefaultPageId;
+    }
+  }
+
+  if (!targetPageId && !targetDatabaseId) {
+    throw new NotionError(
+      'No destination page configured. Please set a default Notion page in Settings.',
+      'NO_DESTINATION'
+    );
+  }
+
+  return createPage(
+    { apiKey },
+    {
+      title,
+      content,
+      parentPageId: targetPageId,
+      databaseId: targetDatabaseId,
+    }
+  );
+}
+
+// ============================================
+// PDF Export
+// ============================================
+
+export interface SaveAsPdfOptions {
+  title?: string;
+  fontSize?: number;
+}
+
+/**
+ * Save content as a PDF file
+ */
+export async function saveAsPdf(content: string, filename: string, options: SaveAsPdfOptions = {}): Promise<string | null> {
+  try {
+    // Only include defined options to avoid overriding defaults with undefined
+    const pdfOptions: PdfOptions = {};
+    if (options.title !== undefined) pdfOptions.title = options.title;
+    if (options.fontSize !== undefined) pdfOptions.fontSize = options.fontSize;
+
+    const pdfBytes = generatePdfAsBytes(content, pdfOptions);
+
+    const selectedPath = await save({
+      defaultPath: filename,
+      filters: [{
+        name: 'PDF',
+        extensions: ['pdf'],
+      }],
+    });
+
+    if (selectedPath) {
+      await writeFile(selectedPath, pdfBytes);
+      return selectedPath;
+    }
+    return null;
+  } catch (error) {
+    console.error('Failed to save PDF:', error);
+    throw error;
+  }
+}

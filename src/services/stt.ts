@@ -57,12 +57,20 @@ export class LocalWhisperProvider implements STTProvider {
   private modelPath: string;
   private whisperPath: string | null = null;
 
-  constructor(modelPath: string = 'base.en') {
+  constructor(modelPath: string = 'base') {
     this.modelPath = modelPath;
   }
 
   setWhisperPath(path: string | null): void {
     this.whisperPath = path;
+  }
+
+  setModel(model: string): void {
+    this.modelPath = model;
+  }
+
+  getModel(): string {
+    return this.modelPath;
   }
 
   async isAvailable(): Promise<boolean> {
@@ -290,6 +298,22 @@ export class STTService {
     if (provider && provider instanceof LocalWhisperProvider) {
       provider.setWhisperPath(path || null);
     }
+  }
+
+  configureWhisperModel(model: string | undefined): void {
+    const provider = this.providers.get('local-whisper');
+    if (provider && provider instanceof LocalWhisperProvider) {
+      // Default to 'base' if no model specified
+      provider.setModel(model || 'base');
+    }
+  }
+
+  getConfiguredWhisperModel(): string {
+    const provider = this.providers.get('local-whisper');
+    if (provider && provider instanceof LocalWhisperProvider) {
+      return provider.getModel();
+    }
+    return 'base';
   }
 
   async getAvailableProvider(): Promise<STTProvider | null> {

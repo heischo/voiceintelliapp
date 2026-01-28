@@ -202,11 +202,11 @@ export class OpenRouterProvider implements LLMProviderInterface {
 
 // Popular models available on OpenRouter
 export const OPENROUTER_MODELS = [
-  { id: 'openai/gpt-4o', name: 'GPT-4o', description: 'OpenAI GPT-4o' },
-  { id: 'openai/gpt-4o-mini', name: 'GPT-4o Mini', description: 'OpenAI GPT-4o Mini' },
-  { id: 'anthropic/claude-3.5-sonnet', name: 'Claude 3.5 Sonnet', description: 'Anthropic Claude' },
-  { id: 'anthropic/claude-3-haiku', name: 'Claude 3 Haiku', description: 'Fast and affordable' },
-  { id: 'google/gemini-pro-1.5', name: 'Gemini Pro 1.5', description: 'Google Gemini' },
-  { id: 'meta-llama/llama-3.1-70b-instruct', name: 'Llama 3.1 70B', description: 'Meta Llama' },
+  { id: 'openai/gpt-4o', name: 'GPT-4o', description: 'OpenAI' },
+  { id: 'openai/gpt-4o-mini', name: 'GPT-4o Mini', description: 'OpenAI' },
+  { id: 'anthropic/claude-3.5-sonnet', name: 'Claude 3.5 Sonnet', description: 'Anthropic' },
+  { id: 'anthropic/claude-3-haiku', name: 'Claude 3 Haiku', description: 'Anthropic' },
+  { id: 'google/gemini-pro-1.5', name: 'Gemini Pro 1.5', description: 'Google' },
+  { id: 'meta-llama/llama-3.1-70b-instruct', name: 'Llama 3.1 70B', description: 'Meta' },
   { id: 'mistralai/mixtral-8x7b-instruct', name: 'Mixtral 8x7B', description: 'Mistral AI' },
 ];

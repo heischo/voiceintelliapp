@@ -9,6 +9,7 @@ interface EnrichmentModeSelectorProps {
   onChange: (mode: EnrichmentMode) => void;
   customPrompt?: string;
   onCustomPromptChange?: (prompt: string) => void;
+  onCustomPromptSubmit?: () => void;
   disabled?: boolean;
 }
 
@@ -17,6 +18,7 @@ export function EnrichmentModeSelector({
   onChange,
   customPrompt = '',
   onCustomPromptChange,
+  onCustomPromptSubmit,
   disabled = false,
 }: EnrichmentModeSelectorProps) {
   const [isOpen, setIsOpen] = useState(false);
@@ -92,6 +94,12 @@ export function EnrichmentModeSelector({
           <textarea
             value={customPrompt}
             onChange={(e) => onCustomPromptChange(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && (e.ctrlKey || e.metaKey) && onCustomPromptSubmit && !disabled) {
+                e.preventDefault();
+                onCustomPromptSubmit();
+              }
+            }}
             disabled={disabled}
             placeholder="Enter your custom instructions for processing the transcript..."
             rows={4}
@@ -101,7 +109,7 @@ export function EnrichmentModeSelector({
               disabled:opacity-50 disabled:cursor-not-allowed"
           />
           <p className="text-xs text-text-muted mt-1">
-            Your prompt will be used to process the transcript. Be specific about the output format you want.
+            Press <kbd className="px-1.5 py-0.5 bg-secondary rounded text-text text-xs">Ctrl+Enter</kbd> to process with your custom prompt.
           </p>
         </div>
       )}

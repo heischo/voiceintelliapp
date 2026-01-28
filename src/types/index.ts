@@ -20,6 +20,18 @@ export interface EnrichmentOptions {
   customPrompt?: string;   // For custom mode
 }
 
+export interface NotionSettings {
+  apiKey: string;
+  defaultPageId?: string;
+  defaultPageName?: string;
+}
+
+export interface NotionPage {
+  id: string;
+  name: string;
+  type: 'page' | 'database';
+}
+
 export interface Settings {
   hotkey: string;
   language: Language;
@@ -35,12 +47,17 @@ export interface Settings {
   openaiApiKey?: string;
   openrouterApiKey?: string;
   notionApiKey?: string;
+  openaiWhisperApiKey?: string;
+  // Notion settings
+  notionDefaultPageId?: string;
+  notionDefaultPageName?: string;
   // Ollama settings
   ollamaModel?: string;
   // Microphone
   selectedMicrophone?: string;
   // Whisper
   whisperPath?: string;
+  whisperModel?: string;
   // Setup
   setupComplete?: boolean;
 }
@@ -140,6 +157,7 @@ export const DEFAULT_SETTINGS: Settings = {
   llmModel: 'gpt-4o-mini',
   autoEnrich: true,
   showNotifications: true,
+  whisperModel: 'base',
 };
 
 // Enrichment mode labels

@@ -2,18 +2,18 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
-import type { Settings, EnrichmentMode, WhisperModel, DownloadProgress } from '../types';
+import type { Settings, EnrichmentMode, WhisperModel, DownloadProgress, NotionPage } from '../types';
+import { searchNotionPages, testNotionConnection } from '../lib/notion';
 import {
   COMMON_HOTKEYS,
   ENRICHMENT_MODES,
   LANGUAGES,
   LLM_PROVIDERS,
-  OUTPUT_TARGETS,
   RETENTION_OPTIONS,
 } from '../lib/config';
 import { MicrophoneSelector } from './MicrophoneSelector';
 import { OPENROUTER_MODELS } from '../providers/openrouter';
-import { getAppVersion, getAvailableModels, downloadWhisperModel, onDownloadProgress, checkOllamaAvailable, getOllamaModels, pullOllamaModel, onOllamaPullProgress } from '../lib/api';
+import { getAppVersion, getAvailableModels, downloadWhisperModel, deleteWhisperModel, onDownloadProgress, checkOllamaAvailable, getOllamaModels, pullOllamaModel, onOllamaPullProgress } from '../lib/api';
 import type { OllamaServiceStatus, OllamaModel, OllamaPullProgress } from '../types/llm';
 
 // OpenAI models
@@ -43,10 +43,14 @@ export function SettingsPanel({ settings, onSave, isLoading, onClose }: Settings
   const [apiKeys, setApiKeys] = useState<Record<string, string>>({
     openai: settings.openaiApiKey || '',
     openrouter: settings.openrouterApiKey || '',
+    openaiWhisper: settings.openaiWhisperApiKey || '',
+    notion: settings.notionApiKey || '',
   });
   const [showApiKey, setShowApiKey] = useState<Record<string, boolean>>({
     openai: false,
     openrouter: false,
+    openaiWhisper: false,
+    notion: false,
   });
   const [whisperAvailable, setWhisperAvailable] = useState<boolean | null>(null);
   const [whisperPath, setWhisperPath] = useState<string>(settings.whisperPath || '');
@@ -60,6 +64,7 @@ export function SettingsPanel({ settings, onSave, isLoading, onClose }: Settings
   const [isLoadingModels, setIsLoadingModels] = useState(false);
   const [downloadingModels, setDownloadingModels] = useState<Record<string, number>>({});
   const [downloadErrors, setDownloadErrors] = useState<Record<string, string>>({});
+  const [deletingModels, setDeletingModels] = useState<Record<string, boolean>>({});
 
   // OLLAMA state
   const [ollamaStatus, setOllamaStatus] = useState<OllamaServiceStatus | null>(null);
@@ -70,6 +75,14 @@ export function SettingsPanel({ settings, onSave, isLoading, onClose }: Settings
   const [ollamaPullModelName, setOllamaPullModelName] = useState<string>('');
   const [ollamaPullingModels, setOllamaPullingModels] = useState<Record<string, number>>({});
   const [ollamaPullErrors, setOllamaPullErrors] = useState<Record<string, string>>({});
+
+  // Notion state
+  const [notionPages, setNotionPages] = useState<NotionPage[]>([]);
+  const [isTestingNotion, setIsTestingNotion] = useState(false);
+  const [notionTestResult, setNotionTestResult] = useState<'success' | 'error' | null>(null);
+  const [notionTestError, setNotionTestError] = useState<string | null>(null);
+  const [notionDefaultPageId, setNotionDefaultPageId] = useState<string>(settings.notionDefaultPageId || '');
+  const [notionDefaultPageName, setNotionDefaultPageName] = useState<string>(settings.notionDefaultPageName || '');
 
   // Fetch app version
   useEffect(() => {
@@ -341,6 +354,38 @@ export function SettingsPanel({ settings, onSave, isLoading, onClose }: Settings
     }
   };
 
+  const handleDeleteModel = async (modelId: string) => {
+    setDeletingModels((prev) => ({
+      ...prev,
+      [modelId]: true,
+    }));
+
+    try {
+      const success = await deleteWhisperModel(modelId);
+      if (success) {
+        // Update the model list to reflect deletion
+        setAvailableModels((prev) =>
+          prev.map((m) =>
+            m.id === modelId
+              ? { ...m, installed: false, installedPath: undefined }
+              : m
+          )
+        );
+      } else {
+        // Show error (could add error state similar to download)
+        console.error('Failed to delete model:', modelId);
+      }
+    } catch (error) {
+      console.error('Error deleting model:', error);
+    } finally {
+      setDeletingModels((prev) => {
+        const newState = { ...prev };
+        delete newState[modelId];
+        return newState;
+      });
+    }
+  };
+
   const handlePullOllamaModel = async (modelName: string) => {
     if (!modelName.trim()) return;
 
@@ -386,6 +431,35 @@ export function SettingsPanel({ settings, onSave, isLoading, onClose }: Settings
     }
   };
 
+  // Test Notion connection and load pages
+  const testNotionAndLoadPages = async () => {
+    if (!apiKeys.notion) {
+      setNotionTestResult('error');
+      setNotionTestError('Please enter an API key first');
+      return;
+    }
+
+    setIsTestingNotion(true);
+    setNotionTestResult(null);
+    setNotionTestError(null);
+    setNotionPages([]);
+
+    try {
+      await testNotionConnection(apiKeys.notion);
+      const pages = await searchNotionPages(apiKeys.notion);
+      setNotionPages(pages);
+      setNotionTestResult('success');
+
+      // If there are pages and no default is set, don't auto-select
+      // User should explicitly choose
+    } catch (error) {
+      setNotionTestResult('error');
+      setNotionTestError(error instanceof Error ? error.message : 'Connection failed');
+    } finally {
+      setIsTestingNotion(false);
+    }
+  };
+
   const handleChange = <K extends keyof Settings>(key: K, value: Settings[K]) => {
     setLocalSettings((prev) => ({ ...prev, [key]: value }));
   };
@@ -401,6 +475,17 @@ export function SettingsPanel({ settings, onSave, isLoading, onClose }: Settings
       }
       if (apiKeys.openrouter) {
         settingsToSave.openrouterApiKey = apiKeys.openrouter;
+      }
+      if (apiKeys.openaiWhisper) {
+        settingsToSave.openaiWhisperApiKey = apiKeys.openaiWhisper;
+      }
+      if (apiKeys.notion) {
+        settingsToSave.notionApiKey = apiKeys.notion;
+      }
+      // Save Notion default page settings
+      if (notionDefaultPageId) {
+        settingsToSave.notionDefaultPageId = notionDefaultPageId;
+        settingsToSave.notionDefaultPageName = notionDefaultPageName;
       }
       await onSave(settingsToSave);
       setSaveSuccess(true);
@@ -465,7 +550,7 @@ export function SettingsPanel({ settings, onSave, isLoading, onClose }: Settings
             </div>
             <p className="text-sm text-text-muted mb-3">
               {whisperAvailable
-                ? 'whisper.cpp is installed. Audio is transcribed locally for maximum privacy.'
+                ? 'Audio is transcribed locally for maximum privacy. See "Offline Components" below to manage installed models.'
                 : 'Install whisper.cpp for local, private transcription. No data leaves your computer.'}
             </p>
 
@@ -557,12 +642,76 @@ export function SettingsPanel({ settings, onSave, isLoading, onClose }: Settings
             )}
           </div>
 
-          {/* Cloud Fallback Info */}
+          {/* Whisper Model Selection - shown when whisper is available and models are installed */}
+          {whisperAvailable && availableModels.some(m => m.installed) && (
+            <div className="p-4 rounded-lg border border-secondary">
+              <label className="block text-sm font-medium text-text mb-2">
+                Transcription Model
+              </label>
+              <select
+                value={localSettings.whisperModel || 'base'}
+                onChange={(e) => handleChange('whisperModel', e.target.value)}
+                className="input w-full"
+              >
+                {availableModels.filter(m => m.installed).map((model) => (
+                  <option key={model.id} value={model.id}>
+                    {model.name} ({model.size}) {model.isMultilingual ? '- Multilingual' : '- English only'}
+                  </option>
+                ))}
+              </select>
+              <p className="text-xs text-text-muted mt-2">
+                Larger models are more accurate but slower. Use multilingual models for non-English languages.
+              </p>
+            </div>
+          )}
+
+          {/* Cloud Fallback */}
           <div className="p-4 rounded-lg border border-secondary">
-            <div className="font-medium text-text mb-2">Cloud Transcription (OpenAI Whisper)</div>
-            <p className="text-sm text-text-muted">
-              Fallback option using OpenAI&apos;s Whisper API. Requires an API key configured below.
+            <div className="flex items-center justify-between mb-2">
+              <div className="flex items-center gap-2">
+                <span className="font-medium text-text">Cloud Transcription (OpenAI Whisper)</span>
+                {apiKeys.openaiWhisper && (
+                  <span className="text-xs bg-success text-black px-2 py-0.5 rounded">Configured</span>
+                )}
+              </div>
+            </div>
+            <p className="text-sm text-text-muted mb-3">
+              Fallback option using OpenAI&apos;s Whisper API when local transcription is not available.
             </p>
+            <div>
+              <label className="block text-sm font-medium text-text mb-2">
+                OpenAI Whisper API Key
+              </label>
+              <div className="relative">
+                <input
+                  type={showApiKey.openaiWhisper ? 'text' : 'password'}
+                  value={apiKeys.openaiWhisper}
+                  onChange={(e) =>
+                    setApiKeys((prev) => ({
+                      ...prev,
+                      openaiWhisper: e.target.value,
+                    }))
+                  }
+                  placeholder="Enter your OpenAI API key for transcription"
+                  className="input w-full pr-20"
+                />
+                <button
+                  type="button"
+                  onClick={() =>
+                    setShowApiKey((prev) => ({
+                      ...prev,
+                      openaiWhisper: !prev.openaiWhisper,
+                    }))
+                  }
+                  className="absolute right-2 top-1/2 -translate-y-1/2 px-3 py-1 text-sm text-text-muted hover:text-text"
+                >
+                  {showApiKey.openaiWhisper ? 'Hide' : 'Show'}
+                </button>
+              </div>
+              <p className="text-xs text-text-muted mt-1">
+                Your API key is stored securely in your system keychain
+              </p>
+            </div>
           </div>
         </div>
       </section>
@@ -935,30 +1084,181 @@ export function SettingsPanel({ settings, onSave, isLoading, onClose }: Settings
         </div>
       </section>
 
-      {/* Output Settings */}
+      {/* Output Integrations */}
       <section className="card">
-        <h3 className="text-lg font-semibold text-primary mb-4">Output</h3>
+        <h3 className="text-lg font-semibold text-primary mb-4">Output Integrations</h3>
         <div className="space-y-4">
-          <div>
-            <label className="block text-sm font-medium text-text mb-2">
-              Default Destination
-            </label>
-            <div className="grid grid-cols-2 gap-2">
-              {OUTPUT_TARGETS.map((target) => (
-                <button
-                  key={target.value}
-                  onClick={() => handleChange('outputTarget', target.value)}
-                  className={`p-3 rounded-lg border text-left transition-all
-                    ${localSettings.outputTarget === target.value
-                      ? 'border-primary bg-primary/10'
-                      : 'border-secondary hover:border-primary/50'
-                    }`}
-                >
-                  <div className="font-medium text-text">{target.label}</div>
-                  <div className="text-xs text-text-muted">{target.description}</div>
-                </button>
-              ))}
+          {/* Notion Integration */}
+          <div className="p-4 rounded-lg border border-secondary">
+            <div className="flex items-center justify-between mb-2">
+              <div className="flex items-center gap-2">
+                <span className="font-medium text-text">Notion</span>
+                {notionTestResult === 'success' && (
+                  <span className="text-xs bg-success text-black px-2 py-0.5 rounded">Connected</span>
+                )}
+              </div>
             </div>
+            <p className="text-sm text-text-muted mb-3">
+              Send transcripts and enriched content directly to Notion pages.
+            </p>
+
+            {/* API Key Input */}
+            <div className="mb-3">
+              <label className="block text-sm font-medium text-text mb-2">
+                Notion API Key
+              </label>
+              <div className="relative">
+                <input
+                  type={showApiKey.notion ? 'text' : 'password'}
+                  value={apiKeys.notion}
+                  onChange={(e) => {
+                    setApiKeys((prev) => ({
+                      ...prev,
+                      notion: e.target.value,
+                    }));
+                    // Reset test result when key changes
+                    setNotionTestResult(null);
+                    setNotionPages([]);
+                  }}
+                  placeholder="Enter your Notion integration token"
+                  className="input w-full pr-16"
+                />
+                <button
+                  type="button"
+                  onClick={() =>
+                    setShowApiKey((prev) => ({
+                      ...prev,
+                      notion: !prev.notion,
+                    }))
+                  }
+                  className="absolute right-2 top-1/2 -translate-y-1/2 px-2 py-1 text-sm text-text-muted hover:text-text"
+                >
+                  {showApiKey.notion ? 'Hide' : 'Show'}
+                </button>
+              </div>
+              <p className="text-xs text-text-muted mt-1">
+                Create an integration at{' '}
+                <a
+                  href="https://www.notion.so/my-integrations"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-primary hover:underline"
+                >
+                  notion.so/my-integrations
+                </a>
+                {' '}and share pages with it.
+              </p>
+            </div>
+
+            {/* Test Connection Button */}
+            <div className="mb-4 flex items-center gap-3">
+              <button
+                type="button"
+                onClick={testNotionAndLoadPages}
+                disabled={isTestingNotion || !apiKeys.notion}
+                className="btn-secondary text-sm py-2 px-4"
+              >
+                {isTestingNotion ? (
+                  <span className="flex items-center gap-2">
+                    <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                    </svg>
+                    Testing...
+                  </span>
+                ) : (
+                  'Test Connection'
+                )}
+              </button>
+              {notionTestResult !== 'success' && (
+                <span className="text-xs text-text-muted">
+                  Select a destination page after successful connection
+                </span>
+              )}
+            </div>
+
+            {/* Test Result - Error */}
+            {notionTestResult === 'error' && (
+              <div className="mb-4 p-3 rounded-lg bg-error/10 border border-error/20">
+                <p className="text-sm text-error flex items-center gap-2">
+                  <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                    <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
+                  </svg>
+                  {notionTestError || 'Connection failed'}
+                </p>
+              </div>
+            )}
+
+            {/* Test Result - Success + Page Selector */}
+            {notionTestResult === 'success' && (
+              <div className="mb-4 p-3 rounded-lg bg-success/10 border border-success/20">
+                <p className="text-sm text-success flex items-center gap-2 mb-3">
+                  <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                    <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+                  </svg>
+                  Connection successful!
+                </p>
+
+                {notionPages.length > 0 && (
+                  <div>
+                    <label className="block text-sm font-medium text-text mb-2">
+                      Default Destination
+                    </label>
+                    <select
+                      value={notionDefaultPageId}
+                      onChange={(e) => {
+                        const selectedPage = notionPages.find(p => p.id === e.target.value);
+                        setNotionDefaultPageId(e.target.value);
+                        setNotionDefaultPageName(selectedPage?.name || '');
+                      }}
+                      className="input w-full"
+                    >
+                      <option value="">Select a page or database...</option>
+                      {notionPages.map((page) => (
+                        <option key={page.id} value={page.id}>
+                          {page.name}
+                        </option>
+                      ))}
+                    </select>
+                    <p className="text-xs text-text-muted mt-1">
+                      New transcripts will be saved to this location.
+                    </p>
+                  </div>
+                )}
+
+                {notionPages.length === 0 && (
+                  <p className="text-sm text-text-muted">
+                    No pages found. Make sure you&apos;ve shared at least one page with your integration.
+                  </p>
+                )}
+              </div>
+            )}
+
+            {/* Show currently configured page when not testing */}
+            {!notionTestResult && notionDefaultPageName && (
+              <div className="p-3 rounded-lg bg-secondary/50">
+                <p className="text-sm text-text">
+                  <span className="text-text-muted">Current destination:</span>{' '}
+                  <span className="font-medium">{notionDefaultPageName}</span>
+                </p>
+                <p className="text-xs text-text-muted mt-1">
+                  Use &quot;Test Connection&quot; to change.
+                </p>
+              </div>
+            )}
+          </div>
+
+          {/* Google Drive - Coming Soon */}
+          <div className="p-4 rounded-lg border border-secondary opacity-60">
+            <div className="flex items-center justify-between mb-2">
+              <div className="flex items-center gap-2">
+                <span className="font-medium text-text">Google Drive</span>
+                <span className="text-xs bg-secondary text-text-muted px-2 py-0.5 rounded">Coming Soon</span>
+              </div>
+            </div>
+            <p className="text-sm text-text-muted">
+              Save transcripts as documents directly to Google Drive.
+            </p>
           </div>
         </div>
       </section>
@@ -1068,6 +1368,7 @@ export function SettingsPanel({ settings, onSave, isLoading, onClose }: Settings
                 const isDownloading = model.id in downloadingModels;
                 const downloadProgress = downloadingModels[model.id] || 0;
                 const hasError = model.id in downloadErrors;
+                const isDeleting = model.id in deletingModels;
 
                 return (
                   <div
@@ -1102,28 +1403,48 @@ export function SettingsPanel({ settings, onSave, isLoading, onClose }: Settings
                       </div>
 
                       <div className="ml-4">
-                        {isDownloading ? (
-                          <div className="flex flex-col items-end">
-                            <div className="w-32 h-2 bg-secondary rounded-full overflow-hidden">
-                              <div
-                                className="h-full bg-primary transition-all duration-300"
-                                style={{ width: `${downloadProgress}%` }}
-                              />
-                            </div>
-                            <span className="text-xs text-text-muted mt-1">
-                              {downloadProgress.toFixed(0)}%
+                        {model.installed ? (
+                          <div className="flex items-center gap-3">
+                            <span className="text-success text-sm flex items-center gap-1">
+                              <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                                <path
+                                  fillRule="evenodd"
+                                  d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z"
+                                  clipRule="evenodd"
+                                />
+                              </svg>
+                              Ready
                             </span>
+                            <button
+                              onClick={() => handleDeleteModel(model.id)}
+                              disabled={isDeleting}
+                              className="text-text-muted hover:text-error text-sm flex items-center gap-1 transition-colors"
+                              title="Remove model"
+                            >
+                              {isDeleting ? (
+                                <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24">
+                                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
+                                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                                </svg>
+                              ) : (
+                                <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                                  <path
+                                    fillRule="evenodd"
+                                    d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z"
+                                    clipRule="evenodd"
+                                  />
+                                </svg>
+                              )}
+                              Remove
+                            </button>
                           </div>
-                        ) : model.installed ? (
-                          <span className="text-success text-sm flex items-center gap-1">
-                            <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
-                              <path
-                                fillRule="evenodd"
-                                d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z"
-                                clipRule="evenodd"
-                              />
+                        ) : isDownloading ? (
+                          <span className="text-primary text-sm flex items-center gap-2">
+                            <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24">
+                              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
+                              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
                             </svg>
-                            Ready
+                            Downloading...
                           </span>
                         ) : (
                           <button

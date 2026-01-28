@@ -1,6 +1,6 @@
 // Notion Integration Module - Handles exporting content to Notion
 
-import type { NotionSettings } from '../types';
+import type { NotionSettings, NotionPage } from '../types';
 
 /**
  * Custom error class for Notion-related errors
@@ -219,6 +219,120 @@ export class NotionClient {
       );
     }
   }
+
+  /**
+   * Searches for accessible pages and databases
+   * @returns Promise resolving to array of NotionPage
+   */
+  async searchPages(): Promise<NotionPage[]> {
+    try {
+      const response = await fetch(`${this.baseUrl}/search`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${this.apiKey}`,
+          'Notion-Version': this.notionVersion,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          filter: {
+            value: 'page',
+            property: 'object',
+          },
+          sort: {
+            direction: 'descending',
+            timestamp: 'last_edited_time',
+          },
+          page_size: 50,
+        }),
+      });
+
+      if (!response.ok) {
+        if (response.status === 401) {
+          throw new NotionError('Invalid or expired API key', 'UNAUTHORIZED', 401);
+        }
+        throw new NotionError(`Notion API error: ${response.statusText}`, 'API_ERROR', response.status);
+      }
+
+      const data = await response.json();
+      const results = (data as { results?: Array<Record<string, unknown>> }).results || [];
+
+      const pages: NotionPage[] = results.map((item) => {
+        const properties = item.properties as Record<string, unknown> | undefined;
+        const titleProp = properties?.title || properties?.Name;
+        let name = 'Untitled';
+
+        if (titleProp && typeof titleProp === 'object') {
+          const titleArray = (titleProp as { title?: Array<{ plain_text?: string }> }).title;
+          if (titleArray && titleArray.length > 0 && titleArray[0].plain_text) {
+            name = titleArray[0].plain_text;
+          }
+        }
+
+        return {
+          id: item.id as string,
+          name,
+          type: 'page' as const,
+        };
+      });
+
+      // Also fetch databases
+      const dbResponse = await fetch(`${this.baseUrl}/search`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${this.apiKey}`,
+          'Notion-Version': this.notionVersion,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          filter: {
+            value: 'database',
+            property: 'object',
+          },
+          sort: {
+            direction: 'descending',
+            timestamp: 'last_edited_time',
+          },
+          page_size: 50,
+        }),
+      });
+
+      if (dbResponse.ok) {
+        const dbData = await dbResponse.json();
+        const dbResults = (dbData as { results?: Array<Record<string, unknown>> }).results || [];
+
+        dbResults.forEach((item) => {
+          const titleArray = (item.title as Array<{ plain_text?: string }>) || [];
+          const name = titleArray.length > 0 && titleArray[0].plain_text
+            ? titleArray[0].plain_text
+            : 'Untitled Database';
+
+          pages.push({
+            id: item.id as string,
+            name: `📊 ${name}`,
+            type: 'database' as const,
+          });
+        });
+      }
+
+      return pages;
+    } catch (error) {
+      if (error instanceof NotionError) {
+        throw error;
+      }
+      throw new NotionError(
+        `Failed to search pages: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        'NETWORK_ERROR'
+      );
+    }
+  }
+
+  /**
+   * Tests the API key validity
+   * @returns Promise resolving to true if valid
+   */
+  async testConnection(): Promise<boolean> {
+    return validateApiKey(this.apiKey);
+  }
 }
 
 /**
@@ -233,4 +347,24 @@ export async function createPage(
 ): Promise<CreatePageResult> {
   const client = new NotionClient(settings);
   return client.createPage(options);
+}
+
+/**
+ * Convenience function to search for accessible pages in Notion
+ * @param apiKey - The Notion API key
+ * @returns Promise resolving to array of NotionPage
+ */
+export async function searchNotionPages(apiKey: string): Promise<NotionPage[]> {
+  const client = new NotionClient({ apiKey });
+  return client.searchPages();
+}
+
+/**
+ * Convenience function to test Notion API connection
+ * @param apiKey - The Notion API key
+ * @returns Promise resolving to true if valid
+ */
+export async function testNotionConnection(apiKey: string): Promise<boolean> {
+  const client = new NotionClient({ apiKey });
+  return client.testConnection();
 }

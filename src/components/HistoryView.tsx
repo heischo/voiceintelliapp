@@ -140,14 +140,7 @@ export function HistoryView({ onReprocess }: HistoryViewProps) {
       }
 
       const title = `Transcript - ${formatDate(item.timestamp)}`;
-      // Create NotionSettings from app settings
-      const notionSettings = {
-        apiKey: settings.notionApiKey,
-      };
-      await exportToNotion(notionSettings, {
-        title,
-        content: item.enrichedContent,
-      });
+      await exportToNotion(item.enrichedContent, settings.notionApiKey, { title });
 
       setExportStatus('success');
       setExportMessage('Exported to Notion!');

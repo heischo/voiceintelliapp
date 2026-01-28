@@ -933,6 +933,37 @@ pub async fn download_whisper_model(
     })
 }
 
+/// Delete a whisper model
+#[tauri::command]
+pub fn delete_whisper_model(model_id: String) -> Result<bool, String> {
+    // Get model info from available models
+    let models = get_available_models();
+    let model = models
+        .iter()
+        .find(|m| m.id == model_id)
+        .ok_or_else(|| format!("Model '{}' not found", model_id))?;
+
+    // Check if installed
+    if !model.installed {
+        return Ok(true); // Already not installed, consider it a success
+    }
+
+    // Get the installed path
+    let model_path = model.installed_path
+        .as_ref()
+        .ok_or_else(|| "Model path not found".to_string())?;
+
+    // Delete the file
+    let path = PathBuf::from(model_path);
+    if path.exists() {
+        std::fs::remove_file(&path)
+            .map_err(|e| format!("Failed to delete model file: {}", e))?;
+        log::info!("Model {} deleted successfully from {}", model_id, model_path);
+    }
+
+    Ok(true)
+}
+
 /// Progress event for OLLAMA model pull
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct OllamaPullProgress {
