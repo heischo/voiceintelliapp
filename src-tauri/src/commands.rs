@@ -731,6 +731,7 @@ pub struct InstallResult {
 
 /// Information about a whisper model
 #[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
 pub struct WhisperModel {
     pub id: String,
     pub name: String,
@@ -794,6 +795,7 @@ pub fn get_available_models() -> Vec<WhisperModel> {
 
 /// Progress event for model download
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct DownloadProgress {
     pub model_id: String,
     pub downloaded: u64,
@@ -804,6 +806,7 @@ pub struct DownloadProgress {
 
 /// Result of model download
 #[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct DownloadResult {
     pub success: bool,
     pub message: String,
@@ -972,13 +975,16 @@ pub fn delete_whisper_model(model_id: String) -> Result<bool, String> {
 
 /// Progress event for OLLAMA model pull
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct OllamaPullProgress {
+    #[serde(rename = "modelId")]
     pub model: String,
     pub status: String,
     pub digest: Option<String>,
     pub total: Option<u64>,
     pub completed: Option<u64>,
-    pub percentage: Option<f32>,
+    #[serde(default)]
+    pub percentage: f32,
 }
 
 /// Result of OLLAMA model pull
@@ -1071,7 +1077,7 @@ pub async fn pull_ollama_model(
         digest: None,
         total: None,
         completed: None,
-        percentage: None,
+        percentage: 0.0,
     });
 
     // Create HTTP client without timeout for long downloads
@@ -1131,7 +1137,7 @@ pub async fn pull_ollama_model(
                         digest: None,
                         total: None,
                         completed: None,
-                        percentage: None,
+                        percentage: 0.0,
                     });
                     return Err(format!("Pull error: {}", error));
                 }
@@ -1163,7 +1169,7 @@ pub async fn pull_ollama_model(
                         digest,
                         total,
                         completed,
-                        percentage,
+                        percentage: percentage.unwrap_or(0.0),
                     });
                     last_progress_update = std::time::Instant::now();
                 }
@@ -1178,7 +1184,7 @@ pub async fn pull_ollama_model(
         digest: None,
         total: None,
         completed: None,
-        percentage: Some(100.0),
+        percentage: 100.0,
     });
 
     log::info!("Model '{}' pulled successfully", model);
