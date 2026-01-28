@@ -93,10 +93,8 @@ export function HistoryView({ onReprocess }: HistoryViewProps) {
 
     try {
       const title = `Transcript - ${formatDate(item.timestamp)}`;
-      const filePath = await saveAsPdf(item.enrichedContent, {
-        title,
-        filename: `transcript-${item.id.slice(0, 8)}.pdf`,
-      });
+      const filename = `transcript-${item.id.slice(0, 8)}.pdf`;
+      const filePath = await saveAsPdf(item.enrichedContent, filename, { title });
 
       if (filePath) {
         setExportStatus('success');

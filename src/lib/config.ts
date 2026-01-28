@@ -90,7 +90,7 @@ export const LLM_PROVIDERS: { value: LLMProvider; label: string; description: st
   },
 ];
 
-export const OUTPUT_TARGETS: { value: OutputTarget; label: string; description: string }[] = [
+export const OUTPUT_TARGETS: { value: OutputTarget; label: string; description: string; comingSoon?: boolean }[] = [
   {
     value: 'clipboard',
     label: 'Clipboard',
@@ -110,6 +110,7 @@ export const OUTPUT_TARGETS: { value: OutputTarget; label: string; description: 
     value: 'google_drive',
     label: 'Google Drive',
     description: 'Save as document in Google Drive',
+    comingSoon: true,
   },
 ];
 

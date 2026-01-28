@@ -9,7 +9,7 @@ export type EnrichmentMode =
   | 'summary'
   | 'custom';
 
-export type OutputTarget = 'clipboard' | 'file';
+export type OutputTarget = 'clipboard' | 'file' | 'notion' | 'google_drive';
 
 export type LLMProvider = 'openai' | 'openrouter' | 'ollama';
 

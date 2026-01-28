@@ -532,6 +532,60 @@ export function SettingsPanel({ settings, onSave, isLoading, onClose }: Settings
         </div>
       </section>
 
+      {/* Hotkey Settings */}
+      <section className="card">
+        <h3 className="text-lg font-semibold text-primary mb-4">Global Hotkey</h3>
+        <div className="space-y-4">
+          <div>
+            <label className="block text-sm font-medium text-text mb-2">
+              Activation Shortcut
+            </label>
+            <select
+              value={localSettings.hotkey}
+              onChange={(e) => handleChange('hotkey', e.target.value)}
+              className="input w-full"
+            >
+              {COMMON_HOTKEYS.map((hk) => (
+                <option key={hk.value} value={hk.value}>
+                  {hk.label}
+                </option>
+              ))}
+            </select>
+            <p className="text-xs text-text-muted mt-1">
+              This shortcut will activate voice recording from any application
+            </p>
+          </div>
+        </div>
+      </section>
+
+      {/* Language Settings */}
+      <section className="card">
+        <h3 className="text-lg font-semibold text-primary mb-4">Language</h3>
+        <div className="space-y-4">
+          <div>
+            <label className="block text-sm font-medium text-text mb-2">
+              Transcription Language
+            </label>
+            <div className="grid grid-cols-3 gap-2">
+              {LANGUAGES.map((lang) => (
+                <button
+                  key={lang.value}
+                  onClick={() => handleChange('language', lang.value)}
+                  className={`p-3 rounded-lg border text-center transition-all
+                    ${localSettings.language === lang.value
+                      ? 'border-primary bg-primary/10'
+                      : 'border-secondary hover:border-primary/50'
+                    }`}
+                >
+                  <div className="text-2xl mb-1">{lang.flag}</div>
+                  <div className="font-medium text-text text-sm">{lang.label}</div>
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      </section>
+
       {/* Transcription Settings */}
       <section className="card">
         <h3 className="text-lg font-semibold text-primary mb-4">Transcription</h3>
@@ -550,7 +604,7 @@ export function SettingsPanel({ settings, onSave, isLoading, onClose }: Settings
             </div>
             <p className="text-sm text-text-muted mb-3">
               {whisperAvailable
-                ? 'Audio is transcribed locally for maximum privacy. See "Offline Components" below to manage installed models.'
+                ? 'Audio is transcribed locally for maximum privacy. Manage models below.'
                 : 'Install whisper.cpp for local, private transcription. No data leaves your computer.'}
             </p>
 
@@ -713,31 +767,142 @@ export function SettingsPanel({ settings, onSave, isLoading, onClose }: Settings
               </p>
             </div>
           </div>
-        </div>
-      </section>
 
-      {/* Hotkey Settings */}
-      <section className="card">
-        <h3 className="text-lg font-semibold text-primary mb-4">Global Hotkey</h3>
-        <div className="space-y-4">
-          <div>
-            <label className="block text-sm font-medium text-text mb-2">
-              Activation Shortcut
-            </label>
-            <select
-              value={localSettings.hotkey}
-              onChange={(e) => handleChange('hotkey', e.target.value)}
-              className="input w-full"
-            >
-              {COMMON_HOTKEYS.map((hk) => (
-                <option key={hk.value} value={hk.value}>
-                  {hk.label}
-                </option>
-              ))}
-            </select>
-            <p className="text-xs text-text-muted mt-1">
-              This shortcut will activate voice recording from any application
+          {/* Whisper Models - integrated from Offline Components */}
+          <div className="border-t border-secondary pt-4 mt-4">
+            <h4 className="text-md font-semibold text-text mb-3">Available Models</h4>
+            <p className="text-sm text-text-muted mb-4">
+              Download whisper models for local transcription. Larger models are more accurate but slower.
             </p>
+
+            {isLoadingModels ? (
+              <div className="flex items-center justify-center py-8">
+                <svg className="animate-spin h-6 w-6 text-primary" viewBox="0 0 24 24">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                </svg>
+                <span className="ml-2 text-text-muted">Loading models...</span>
+              </div>
+            ) : availableModels.length === 0 ? (
+              <div className="text-center py-8 text-text-muted">
+                <p>No models available. Please ensure whisper.cpp is installed.</p>
+                <button
+                  onClick={loadModels}
+                  className="btn-secondary mt-4 text-sm py-2 px-4"
+                >
+                  Retry
+                </button>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {availableModels.map((model) => {
+                  const isDownloading = model.id in downloadingModels;
+                  const hasError = model.id in downloadErrors;
+                  const isDeleting = model.id in deletingModels;
+
+                  return (
+                    <div
+                      key={model.id}
+                      className={`p-3 rounded-lg border ${
+                        model.installed ? 'border-success bg-success/10' : 'border-secondary'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between">
+                        <div className="flex-1">
+                          <div className="flex items-center gap-2">
+                            <span className="font-medium text-text text-sm">{model.name}</span>
+                            {model.installed && (
+                              <span className="text-xs bg-success text-black px-2 py-0.5 rounded">
+                                Installed
+                              </span>
+                            )}
+                            {model.isMultilingual && (
+                              <span className="text-xs bg-primary/20 text-primary px-2 py-0.5 rounded">
+                                Multilingual
+                              </span>
+                            )}
+                          </div>
+                          <div className="text-xs text-text-muted mt-1">
+                            Size: {model.size}
+                          </div>
+                        </div>
+
+                        <div className="ml-4">
+                          {model.installed ? (
+                            <div className="flex items-center gap-2">
+                              <span className="text-success text-xs flex items-center gap-1">
+                                <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
+                                  <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+                                </svg>
+                                Ready
+                              </span>
+                              <button
+                                onClick={() => handleDeleteModel(model.id)}
+                                disabled={isDeleting}
+                                className="text-text-muted hover:text-error text-xs flex items-center gap-1 transition-colors"
+                                title="Remove model"
+                              >
+                                {isDeleting ? (
+                                  <svg className="animate-spin h-3 w-3" viewBox="0 0 24 24">
+                                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
+                                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                                  </svg>
+                                ) : (
+                                  <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
+                                    <path fillRule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z" clipRule="evenodd" />
+                                  </svg>
+                                )}
+                              </button>
+                            </div>
+                          ) : isDownloading ? (
+                            <span className="text-primary text-xs flex items-center gap-2">
+                              <svg className="animate-spin h-3 w-3" viewBox="0 0 24 24">
+                                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
+                                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                              </svg>
+                              Downloading...
+                            </span>
+                          ) : (
+                            <button
+                              onClick={() => handleDownloadModel(model.id)}
+                              className="btn-secondary text-xs py-1.5 px-3"
+                            >
+                              Download
+                            </button>
+                          )}
+                        </div>
+                      </div>
+
+                      {hasError && (
+                        <div className="mt-2 text-error text-xs flex items-center gap-1">
+                          <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
+                            <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
+                          </svg>
+                          {downloadErrors[model.id]}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+
+            <details className="mt-4">
+              <summary className="cursor-pointer text-xs text-text-muted hover:text-text flex items-center gap-1">
+                <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+                Model recommendations
+              </summary>
+              <div className="mt-2 p-3 rounded-lg bg-secondary/30 text-xs text-text-muted">
+                <ul className="space-y-1">
+                  <li><strong>Tiny/Base:</strong> Fast, good for quick notes</li>
+                  <li><strong>Small:</strong> Balanced speed and accuracy</li>
+                  <li><strong>Medium:</strong> Higher accuracy for important recordings</li>
+                  <li><strong>Large:</strong> Best accuracy, more memory needed</li>
+                </ul>
+              </div>
+            </details>
           </div>
         </div>
       </section>
@@ -1263,34 +1428,6 @@ export function SettingsPanel({ settings, onSave, isLoading, onClose }: Settings
         </div>
       </section>
 
-      {/* Language Settings */}
-      <section className="card">
-        <h3 className="text-lg font-semibold text-primary mb-4">Language</h3>
-        <div className="space-y-4">
-          <div>
-            <label className="block text-sm font-medium text-text mb-2">
-              Transcription Language
-            </label>
-            <div className="grid grid-cols-3 gap-2">
-              {LANGUAGES.map((lang) => (
-                <button
-                  key={lang.value}
-                  onClick={() => handleChange('language', lang.value)}
-                  className={`p-3 rounded-lg border text-center transition-all
-                    ${localSettings.language === lang.value
-                      ? 'border-primary bg-primary/10'
-                      : 'border-secondary hover:border-primary/50'
-                    }`}
-                >
-                  <div className="text-2xl mb-1">{lang.flag}</div>
-                  <div className="font-medium text-text text-sm">{lang.label}</div>
-                </button>
-              ))}
-            </div>
-          </div>
-        </div>
-      </section>
-
       {/* History Settings */}
       <section className="card">
         <h3 className="text-lg font-semibold text-primary mb-4">History</h3>
@@ -1336,170 +1473,47 @@ export function SettingsPanel({ settings, onSave, isLoading, onClose }: Settings
         </div>
       </section>
 
-      {/* Offline Components Section */}
-      <section className="card">
-        <h3 className="text-lg font-semibold text-primary mb-4">Offline Components</h3>
-        <div className="space-y-4">
-          <p className="text-sm text-text-muted">
-            Download whisper models for local, private transcription. Larger models are more accurate but slower.
-          </p>
-
-          {isLoadingModels ? (
-            <div className="flex items-center justify-center py-8">
-              <svg className="animate-spin h-6 w-6 text-primary" viewBox="0 0 24 24">
-                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
-                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-              </svg>
-              <span className="ml-2 text-text-muted">Loading models...</span>
-            </div>
-          ) : availableModels.length === 0 ? (
-            <div className="text-center py-8 text-text-muted">
-              <p>No models available. Please ensure whisper.cpp is installed.</p>
-              <button
-                onClick={loadModels}
-                className="btn-secondary mt-4 text-sm py-2 px-4"
-              >
-                Retry
-              </button>
-            </div>
-          ) : (
-            <div className="space-y-3">
-              {availableModels.map((model) => {
-                const isDownloading = model.id in downloadingModels;
-                const downloadProgress = downloadingModels[model.id] || 0;
-                const hasError = model.id in downloadErrors;
-                const isDeleting = model.id in deletingModels;
-
-                return (
-                  <div
-                    key={model.id}
-                    className={`p-4 rounded-lg border ${
-                      model.installed ? 'border-success bg-success/10' : 'border-secondary'
-                    }`}
-                  >
-                    <div className="flex items-center justify-between">
-                      <div className="flex-1">
-                        <div className="flex items-center gap-2">
-                          <span className="font-medium text-text">{model.name}</span>
-                          {model.installed && (
-                            <span className="text-xs bg-success text-black px-2 py-0.5 rounded">
-                              Installed
-                            </span>
-                          )}
-                          {model.isMultilingual && (
-                            <span className="text-xs bg-primary/20 text-primary px-2 py-0.5 rounded">
-                              Multilingual
-                            </span>
-                          )}
-                        </div>
-                        <div className="text-sm text-text-muted mt-1">
-                          Size: {model.size}
-                        </div>
-                        {model.installed && model.installedPath && (
-                          <div className="text-xs text-text-muted bg-secondary/50 rounded p-2 mt-2 font-mono break-all">
-                            {model.installedPath}
-                          </div>
-                        )}
-                      </div>
-
-                      <div className="ml-4">
-                        {model.installed ? (
-                          <div className="flex items-center gap-3">
-                            <span className="text-success text-sm flex items-center gap-1">
-                              <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
-                                <path
-                                  fillRule="evenodd"
-                                  d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z"
-                                  clipRule="evenodd"
-                                />
-                              </svg>
-                              Ready
-                            </span>
-                            <button
-                              onClick={() => handleDeleteModel(model.id)}
-                              disabled={isDeleting}
-                              className="text-text-muted hover:text-error text-sm flex items-center gap-1 transition-colors"
-                              title="Remove model"
-                            >
-                              {isDeleting ? (
-                                <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24">
-                                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
-                                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-                                </svg>
-                              ) : (
-                                <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
-                                  <path
-                                    fillRule="evenodd"
-                                    d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z"
-                                    clipRule="evenodd"
-                                  />
-                                </svg>
-                              )}
-                              Remove
-                            </button>
-                          </div>
-                        ) : isDownloading ? (
-                          <span className="text-primary text-sm flex items-center gap-2">
-                            <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24">
-                              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
-                              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-                            </svg>
-                            Downloading...
-                          </span>
-                        ) : (
-                          <button
-                            onClick={() => handleDownloadModel(model.id)}
-                            className="btn-secondary text-sm py-2 px-4"
-                          >
-                            Download
-                          </button>
-                        )}
-                      </div>
-                    </div>
-
-                    {hasError && (
-                      <div className="mt-2 text-error text-sm flex items-center gap-1">
-                        <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
-                          <path
-                            fillRule="evenodd"
-                            d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z"
-                            clipRule="evenodd"
-                          />
-                        </svg>
-                        {downloadErrors[model.id]}
-                      </div>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-          )}
-
-          <div className="p-4 rounded-lg border border-secondary bg-secondary/30">
-            <div className="font-medium text-text mb-2">Model Recommendations</div>
-            <ul className="text-sm text-text-muted space-y-1">
-              <li>• <strong>Tiny/Base:</strong> Fast, good for quick notes and short recordings</li>
-              <li>• <strong>Small:</strong> Balanced speed and accuracy for most use cases</li>
-              <li>• <strong>Medium:</strong> Higher accuracy, good for important recordings</li>
-              <li>• <strong>Large:</strong> Best accuracy, requires more memory and processing time</li>
-            </ul>
-          </div>
-        </div>
-      </section>
-
       {/* About Section */}
       <section className="card">
         <h3 className="text-lg font-semibold text-primary mb-4">About</h3>
-        <div className="space-y-2">
+        <div className="space-y-4">
           <div className="flex items-center justify-between">
-            <span className="text-text">VoiceIntelli</span>
+            <span className="text-text font-medium">VoiceIntelli</span>
             <span className="text-text-muted font-mono">
               {appVersion ? `v${appVersion}` : 'Loading...'}
             </span>
           </div>
-          <p className="text-xs text-text-muted">
+          <p className="text-sm text-text-muted">
             Voice-to-text transcription with AI enrichment
           </p>
+          <p className="text-sm text-text-muted">
+            &copy; {new Date().getFullYear()} H.F. Scholze. All rights reserved.
+          </p>
+
+          {/* Components List */}
+          <details className="group">
+            <summary className="cursor-pointer text-sm text-primary hover:text-primary/80 flex items-center gap-2">
+              <svg className="w-4 h-4 transition-transform group-open:rotate-90" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+              </svg>
+              Open Source Components
+            </summary>
+            <div className="mt-3 p-3 rounded-lg bg-secondary/30 text-xs text-text-muted space-y-2">
+              <div className="font-medium text-text mb-2">This application uses the following open source components:</div>
+              <ul className="space-y-1.5">
+                <li><strong>Tauri</strong> - Desktop application framework (MIT)</li>
+                <li><strong>Next.js</strong> - React framework (MIT)</li>
+                <li><strong>React</strong> - UI library (MIT)</li>
+                <li><strong>Tailwind CSS</strong> - Utility-first CSS framework (MIT)</li>
+                <li><strong>whisper.cpp</strong> - Speech-to-text engine (MIT)</li>
+                <li><strong>jsPDF</strong> - PDF generation library (MIT)</li>
+                <li><strong>OpenAI SDK</strong> - API client (MIT)</li>
+              </ul>
+              <p className="mt-3 pt-2 border-t border-secondary">
+                For LLM processing: OpenAI API, OpenRouter, or Ollama (local)
+              </p>
+            </div>
+          </details>
         </div>
       </section>
 
