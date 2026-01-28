@@ -40,7 +40,6 @@ A privacy-first desktop application for knowledge workers that transforms voice 
 - **Setup Wizard** — Guided first-run configuration
 - **History Management** — Browse past transcriptions with auto-retention settings
 - **System Tray** — Quick access and background operation
-- **Multi-language UI** — English, German, Norwegian interface
 - **Unsaved Changes Detection** — Confirmation dialogs prevent data loss
 
 ## Architecture Overview
@@ -48,25 +47,25 @@ A privacy-first desktop application for knowledge workers that transforms voice 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
 │                    User Interface (Next.js/React)               │
-│  ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────────────┐   │
-│  │ Recording│ │ Settings │ │ History  │ │ Transcript Modal │   │
-│  │ Overlay  │ │  Panel   │ │  View    │ │ + Enrichment     │   │
-│  └──────────┘ └──────────┘ └──────────┘ └──────────────────┘   │
+│  ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────────────┐    │
+│  │ Recording│ │ Settings │ │ History  │ │ Transcript Modal │    │
+│  │ Overlay  │ │  Panel   │ │  View    │ │ + Enrichment     │    │
+│  └──────────┘ └──────────┘ └──────────┘ └──────────────────┘    │
 └─────────────────────────────┬───────────────────────────────────┘
                               │ Tauri IPC
 ┌─────────────────────────────┴───────────────────────────────────┐
-│                    Rust Backend (Tauri v2)                       │
+│                    Rust Backend (Tauri v2)                      │
 │  ┌──────────────┐ ┌──────────────┐ ┌──────────────────────────┐ │
 │  │ Audio Capture│ │ File System  │ │ Secure Storage (Keychain)│ │
 │  └──────────────┘ └──────────────┘ └──────────────────────────┘ │
 └─────────────────────────────┬───────────────────────────────────┘
                               │
 ┌─────────────────────────────┴───────────────────────────────────┐
-│                      External Services                           │
-│  ┌───────────┐ ┌─────────────┐ ┌─────────┐ ┌─────────┐         │
+│                      External Services                          │
+│  ┌───────────┐ ┌─────────────┐ ┌───────-──┐ ┌─────────┐         │
 │  │whisper.cpp│ │ OpenAI API  │ │OpenRouter│ │ Ollama  │         │
 │  │  (local)  │ │ (optional)  │ │(optional)│ │ (local) │         │
-│  └───────────┘ └─────────────┘ └─────────┘ └─────────┘         │
+│  └───────────┘ └─────────────┘ └────────-─┘ └─────────┘         │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
@@ -96,8 +95,7 @@ Before you begin, ensure you have the following installed:
 #### 1. Clone the Repository
 
 ```bash
-git clone https://github.com/yourusername/voice-intelligence.git
-cd voice-intelligence
+git clone https://github.com/heischo/voiceintelliapp.git
 ```
 
 #### 2. Install Dependencies
@@ -519,10 +517,10 @@ Voice Intelligence is built with privacy as a core principle.
 ### Data Flow
 
 ```
-┌─────────────┐     ┌──────────────┐     ┌─────────────┐
+┌─────────────┐      ┌──────────────┐     ┌─────────────┐
 │   Your      │────▶│  Your        │────▶│   Your      │
-│   Voice     │     │  Computer    │     │   Output    │
-└─────────────┘     └──────────────┘     └─────────────┘
+│   Voice     │      │  Computer    │     │   Output    │
+└─────────────┘      └──────────────┘     └─────────────┘
                            │
                     ┌──────┴───────┐
                     │   Optional   │
@@ -647,8 +645,7 @@ We welcome contributions! Here's how to get started:
 1. **Fork** the repository on GitHub
 2. **Clone** your fork:
    ```bash
-   git clone https://github.com/YOUR_USERNAME/voice-intelligence.git
-   cd voice-intelligence
+   git clone https://github.com/heischo/voiceintelliapp.git
    ```
 3. **Install** dependencies: `npm install`
 4. **Create** a feature branch: `git checkout -b feature/my-feature`
@@ -686,7 +683,7 @@ This project is licensed under the **MIT License**.
 ```
 MIT License
 
-Copyright (c) 2026 Voice Intelligence Team
+Copyright (c) 2026 Heiko F. Scholze 
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
