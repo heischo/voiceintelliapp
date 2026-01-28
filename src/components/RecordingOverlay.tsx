@@ -11,6 +11,7 @@ interface RecordingOverlayProps {
   onStop: () => void;
   onCancel: () => void;
   hotkey?: string;
+  startedViaHotkey?: boolean;
 }
 
 export function RecordingOverlay({
@@ -20,6 +21,7 @@ export function RecordingOverlay({
   onStop,
   onCancel,
   hotkey,
+  startedViaHotkey,
 }: RecordingOverlayProps) {
   // Format hotkey for display
   const formattedHotkey = hotkey?.replace('CommandOrControl', 'Ctrl').replace('+', ' + ') || 'Ctrl + Shift + Space';
@@ -34,23 +36,7 @@ export function RecordingOverlay({
   const remainingTime = MAX_RECORDING_DURATION - duration;
   const showWarning = remainingTime <= 30 && remainingTime > 0;
 
-  // Handle keyboard shortcuts
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        onCancel();
-      } else if (e.key === 'Enter') {
-        e.preventDefault();
-        onStop();
-      }
-      // Space is ignored - use hotkey or Enter to stop
-    };
-
-    if (state === 'recording') {
-      window.addEventListener('keydown', handleKeyDown);
-      return () => window.removeEventListener('keydown', handleKeyDown);
-    }
-  }, [state, onStop, onCancel]);
+  // No keyboard shortcuts needed - push-to-talk mode uses hotkey hold/release
 
   if (state === 'idle' || state === 'completed') {
     return null;
@@ -190,12 +176,10 @@ export function RecordingOverlay({
           )}
         </div>
 
-        {/* Keyboard hints */}
-        {state === 'recording' && (
+        {/* Keyboard hints - only show if started via hotkey */}
+        {state === 'recording' && startedViaHotkey && (
           <div className="text-text-muted text-xs">
-            Press <kbd className="px-2 py-1 bg-secondary rounded text-text">{formattedHotkey}</kbd> or{' '}
-            <kbd className="px-2 py-1 bg-secondary rounded text-text">Enter</kbd> to stop,{' '}
-            <kbd className="px-2 py-1 bg-secondary rounded text-text">Esc</kbd> to cancel
+            Release <kbd className="px-2 py-1 bg-secondary rounded text-text">{formattedHotkey}</kbd> to stop
           </div>
         )}
       </div>

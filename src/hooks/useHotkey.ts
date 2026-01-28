@@ -14,20 +14,26 @@ interface UseHotkeyReturn {
 
 export function useHotkey(
   initialShortcut?: string,
-  onTrigger?: () => void
+  onPress?: () => void,
+  onRelease?: () => void
 ): UseHotkeyReturn {
   const [isRegistered, setIsRegistered] = useState(false);
   const [isLoading, setIsLoading] = useState(true); // Start as loading
   const [error, setError] = useState<string | null>(null);
-  const callbackRef = useRef(onTrigger);
+  const onPressRef = useRef(onPress);
+  const onReleaseRef = useRef(onRelease);
   const currentShortcutRef = useRef<string | null>(null);
   const isRegisteredRef = useRef(false);
   const setupAttemptedRef = useRef(false);
 
-  // Keep callback ref updated
+  // Keep callback refs updated
   useEffect(() => {
-    callbackRef.current = onTrigger;
-  }, [onTrigger]);
+    onPressRef.current = onPress;
+  }, [onPress]);
+
+  useEffect(() => {
+    onReleaseRef.current = onRelease;
+  }, [onRelease]);
 
   // Register hotkey on mount if initial shortcut provided
   useEffect(() => {
@@ -52,14 +58,19 @@ export function useHotkey(
           // Ignore - might not be registered
         }
 
-        // Create a wrapper callback that uses the ref
-        const wrappedCallback = () => {
-          if (callbackRef.current) {
-            callbackRef.current();
+        // Create wrapper callbacks that use the refs
+        const wrappedOnPress = () => {
+          if (onPressRef.current) {
+            onPressRef.current();
+          }
+        };
+        const wrappedOnRelease = () => {
+          if (onReleaseRef.current) {
+            onReleaseRef.current();
           }
         };
 
-        await registerHotkey(initialShortcut, wrappedCallback);
+        await registerHotkey(initialShortcut, wrappedOnPress, wrappedOnRelease);
 
         if (isMounted) {
           currentShortcutRef.current = initialShortcut;

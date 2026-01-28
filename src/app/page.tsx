@@ -36,6 +36,7 @@ export default function Home() {
   const [appVersion, setAppVersion] = useState<string>('');
   const [settingsInitialized, setSettingsInitialized] = useState(false);
   const [hasCompletedAction, setHasCompletedAction] = useState(false);
+  const [startedViaHotkey, setStartedViaHotkey] = useState(false);
 
   // Update local state when settings load (only on first load)
   useEffect(() => {
@@ -170,23 +171,29 @@ export default function Home() {
     }
   }, [recording, settings.autoEnrich, settings.language, settings.openaiApiKey, handleEnrich]);
 
-  // Hotkey handler
-  const handleHotkey = useCallback(() => {
-    if (recording.state === 'idle') {
+  // Hotkey handlers for push-to-talk
+  const handleHotkeyPress = useCallback(() => {
+    // Allow starting when idle, completed, or after error
+    if (recording.state === 'idle' || recording.state === 'completed' || recording.state === 'error') {
       // Clear old transcript when starting new recording via hotkey
       if (transcript) {
         setTranscript(null);
         setEnrichedContent(null);
         setHasCompletedAction(false);
       }
+      setStartedViaHotkey(true);
       recording.startRecording();
-    } else if (recording.state === 'recording') {
+    }
+  }, [recording, transcript]);
+
+  const handleHotkeyRelease = useCallback(() => {
+    if (recording.state === 'recording') {
       handleStopRecording();
     }
-  }, [recording, handleStopRecording, transcript]);
+  }, [recording.state, handleStopRecording]);
 
-  // Register hotkey
-  const hotkey = useHotkey(settings.hotkey, handleHotkey);
+  // Register hotkey (push-to-talk: hold to record, release to stop)
+  const hotkey = useHotkey(settings.hotkey, handleHotkeyPress, handleHotkeyRelease);
 
   // Handle new recording
   const handleNewRecording = () => {
@@ -194,6 +201,7 @@ export default function Home() {
     setTranscript(null);
     setEnrichedContent(null);
     setHasCompletedAction(false);
+    setStartedViaHotkey(false);
     recording.startRecording();
   };
 
@@ -217,6 +225,7 @@ export default function Home() {
       setEnrichedContent(null);
       setHasCompletedAction(false);
     }
+    setStartedViaHotkey(false);
     recording.startRecording();
   };
 
@@ -454,6 +463,7 @@ export default function Home() {
         onStop={handleStopRecording}
         onCancel={recording.cancelRecording}
         hotkey={settings.hotkey}
+        startedViaHotkey={startedViaHotkey}
       />
 
       {/* Header */}
@@ -504,7 +514,7 @@ export default function Home() {
               {hotkey.isLoading
                 ? 'Registering hotkey...'
                 : hotkey.isRegistered
-                  ? `Press ${settings.hotkey.replace('CommandOrControl', 'Ctrl')} to record`
+                  ? `Press and hold ${settings.hotkey.replace('CommandOrControl', 'Ctrl')} to record`
                   : 'Hotkey not registered'}
             </span>
           </div>
@@ -542,7 +552,7 @@ export default function Home() {
             </button>
             <p className="mt-6 text-text-muted">Click to start recording</p>
             <p className="text-sm text-text-muted mt-2">
-              or press{' '}
+              or press and hold{' '}
               <kbd className="px-2 py-1 bg-secondary rounded text-text text-xs">
                 {settings.hotkey.replace('CommandOrControl', 'Ctrl')}
               </kbd>
@@ -645,7 +655,7 @@ export default function Home() {
             </button>
             <p className="mt-6 text-text-muted">Click to start new recording</p>
             <p className="text-sm text-text-muted mt-2">
-              or press{' '}
+              or press and hold{' '}
               <kbd className="px-2 py-1 bg-secondary rounded text-text text-xs">
                 {settings.hotkey.replace('CommandOrControl', 'Ctrl')}
               </kbd>

@@ -62,14 +62,17 @@ export async function saveSettings(settings: Settings): Promise<void> {
 
 export async function registerHotkey(
   shortcut: string,
-  callback: () => void
+  onPress: () => void,
+  onRelease?: () => void
 ): Promise<void> {
   try {
     // In Tauri v2, the callback receives an event with state ("Pressed" or "Released")
-    // We only want to trigger on key press, not release
+    // Push-to-talk: onPress starts, onRelease stops
     await register(shortcut, (event) => {
       if (event.state === 'Pressed') {
-        callback();
+        onPress();
+      } else if (event.state === 'Released' && onRelease) {
+        onRelease();
       }
     });
   } catch (error) {
