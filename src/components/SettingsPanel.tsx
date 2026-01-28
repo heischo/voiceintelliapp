@@ -464,14 +464,40 @@ export function SettingsPanel({ settings, onSave, isLoading, onClose }: Settings
     setLocalSettings((prev) => {
       const newSettings = { ...prev, [key]: value };
 
-      // When changing language to non-English, ensure a multilingual model is selected
-      if (key === 'language' && value !== 'en') {
+      // Auto-select appropriate model when language changes
+      if (key === 'language') {
         const currentModel = availableModels.find(m => m.id === prev.whisperModel);
-        // If current model is English-only, switch to a multilingual one
-        if (currentModel && !currentModel.isMultilingual) {
-          const multilingualModel = availableModels.find(m => m.installed && m.isMultilingual);
-          if (multilingualModel) {
-            newSettings.whisperModel = multilingualModel.id;
+
+        if (value === 'en') {
+          // Switching TO English: prefer English-only model (faster)
+          if (currentModel && currentModel.isMultilingual) {
+            // Find an English-only model of the same "family" (base, small, etc.)
+            const modelFamily = currentModel.id.replace('-multi', '');
+            const englishModel = availableModels.find(m =>
+              m.installed && !m.isMultilingual && m.id === modelFamily
+            );
+            // Fallback to any installed English-only model
+            const anyEnglishModel = availableModels.find(m => m.installed && !m.isMultilingual);
+            if (englishModel) {
+              newSettings.whisperModel = englishModel.id;
+            } else if (anyEnglishModel) {
+              newSettings.whisperModel = anyEnglishModel.id;
+            }
+          }
+        } else {
+          // Switching TO non-English: require multilingual model
+          if (currentModel && !currentModel.isMultilingual) {
+            // Find a multilingual model of the same "family"
+            const multilingualModel = availableModels.find(m =>
+              m.installed && m.isMultilingual && m.id === `${currentModel.id}-multi`
+            );
+            // Fallback to any installed multilingual model
+            const anyMultilingualModel = availableModels.find(m => m.installed && m.isMultilingual);
+            if (multilingualModel) {
+              newSettings.whisperModel = multilingualModel.id;
+            } else if (anyMultilingualModel) {
+              newSettings.whisperModel = anyMultilingualModel.id;
+            }
           }
         }
       }
