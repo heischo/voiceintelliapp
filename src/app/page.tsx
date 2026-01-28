@@ -453,6 +453,7 @@ export default function Home() {
         audioLevel={recording.audioLevel}
         onStop={handleStopRecording}
         onCancel={recording.cancelRecording}
+        hotkey={settings.hotkey}
       />
 
       {/* Header */}

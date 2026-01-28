@@ -10,6 +10,7 @@ interface RecordingOverlayProps {
   audioLevel: number;
   onStop: () => void;
   onCancel: () => void;
+  hotkey?: string;
 }
 
 export function RecordingOverlay({
@@ -18,7 +19,10 @@ export function RecordingOverlay({
   audioLevel,
   onStop,
   onCancel,
+  hotkey,
 }: RecordingOverlayProps) {
+  // Format hotkey for display
+  const formattedHotkey = hotkey?.replace('CommandOrControl', 'Ctrl').replace('+', ' + ') || 'Ctrl + Shift + Space';
   // Format duration as mm:ss
   const formattedDuration = useMemo(() => {
     const minutes = Math.floor(duration / 60);
@@ -188,8 +192,7 @@ export function RecordingOverlay({
         {/* Keyboard hints */}
         {state === 'recording' && (
           <div className="text-text-muted text-xs">
-            Press <kbd className="px-2 py-1 bg-secondary rounded text-text">Enter</kbd> or{' '}
-            <kbd className="px-2 py-1 bg-secondary rounded text-text">Space</kbd> to stop,{' '}
+            Press <kbd className="px-2 py-1 bg-secondary rounded text-text">{formattedHotkey}</kbd> to stop,{' '}
             <kbd className="px-2 py-1 bg-secondary rounded text-text">Esc</kbd> to cancel
           </div>
         )}

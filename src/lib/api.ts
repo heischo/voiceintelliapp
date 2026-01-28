@@ -65,7 +65,13 @@ export async function registerHotkey(
   callback: () => void
 ): Promise<void> {
   try {
-    await register(shortcut, callback);
+    // In Tauri v2, the callback receives an event with state ("Pressed" or "Released")
+    // We only want to trigger on key press, not release
+    await register(shortcut, (event) => {
+      if (event.state === 'Pressed') {
+        callback();
+      }
+    });
   } catch (error) {
     console.error('Failed to register hotkey:', error);
     throw error;
