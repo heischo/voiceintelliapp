@@ -32,9 +32,10 @@ interface SettingsPanelProps {
   onSave: (settings: Partial<Settings>) => Promise<void>;
   isLoading?: boolean;
   onClose?: () => void;
+  showHeader?: boolean;
 }
 
-export function SettingsPanel({ settings, onSave, isLoading, onClose }: SettingsPanelProps) {
+export function SettingsPanel({ settings, onSave, isLoading, onClose, showHeader }: SettingsPanelProps) {
   const router = useRouter();
   const [localSettings, setLocalSettings] = useState(settings);
   const [isSaving, setIsSaving] = useState(false);
@@ -45,6 +46,20 @@ export function SettingsPanel({ settings, onSave, isLoading, onClose }: Settings
     openaiWhisper: settings.openaiWhisperApiKey || '',
     notion: settings.notionApiKey || '',
   });
+
+  // Track original values to detect changes
+  const [originalSettings] = useState(() => JSON.stringify(settings));
+  const [originalApiKeys] = useState<Record<string, string>>(() => ({
+    openai: settings.openaiApiKey || '',
+    openrouter: settings.openrouterApiKey || '',
+    openaiWhisper: settings.openaiWhisperApiKey || '',
+    notion: settings.notionApiKey || '',
+  }));
+  const [originalNotionPageId] = useState(settings.notionDefaultPageId || '');
+  const [originalWhisperPath] = useState(settings.whisperPath || '');
+
+  // Confirmation dialog state
+  const [showConfirmDialog, setShowConfirmDialog] = useState(false);
   const [showApiKey, setShowApiKey] = useState<Record<string, boolean>>({
     openai: false,
     openrouter: false,
@@ -558,7 +573,42 @@ export function SettingsPanel({ settings, onSave, isLoading, onClose }: Settings
     }
   };
 
+  // Check if there are unsaved changes
+  const hasUnsavedChanges = useCallback(() => {
+    // Compare localSettings with original
+    if (JSON.stringify(localSettings) !== originalSettings) {
+      return true;
+    }
+
+    // Compare API keys
+    for (const key of Object.keys(apiKeys)) {
+      if (apiKeys[key] !== originalApiKeys[key]) {
+        return true;
+      }
+    }
+
+    // Compare Notion page ID
+    if (notionDefaultPageId !== originalNotionPageId) {
+      return true;
+    }
+
+    // Compare whisper path
+    if (whisperPath !== originalWhisperPath) {
+      return true;
+    }
+
+    return false;
+  }, [localSettings, originalSettings, apiKeys, originalApiKeys, notionDefaultPageId, originalNotionPageId, whisperPath, originalWhisperPath]);
+
   const handleCancel = () => {
+    if (hasUnsavedChanges()) {
+      setShowConfirmDialog(true);
+    } else {
+      doClose();
+    }
+  };
+
+  const doClose = () => {
     if (onClose) {
       onClose();
     } else {
@@ -566,8 +616,34 @@ export function SettingsPanel({ settings, onSave, isLoading, onClose }: Settings
     }
   };
 
+  const handleDiscardChanges = () => {
+    setShowConfirmDialog(false);
+    doClose();
+  };
+
+  const handleSaveAndClose = async () => {
+    setShowConfirmDialog(false);
+    await handleSave();
+  };
+
   return (
-    <div className="space-y-8">
+    <div className="flex flex-col">
+      {/* Header with close button */}
+      {showHeader && (
+        <div className="border-b border-secondary px-6 py-4 flex items-center justify-between">
+          <h2 className="text-xl font-bold text-text">Settings</h2>
+          <button
+            onClick={handleCancel}
+            className="text-text-muted hover:text-text transition-colors"
+          >
+            <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
+      )}
+
+      <div className="p-6 space-y-8">
       {/* Microphone Settings */}
       <section className="card">
         <h3 className="text-lg font-semibold text-primary mb-4">Microphone</h3>
@@ -1602,6 +1678,40 @@ export function SettingsPanel({ settings, onSave, isLoading, onClose }: Settings
           {isSaving ? 'Saving...' : saveSuccess ? 'Saved!' : 'Save Settings'}
         </button>
       </div>
+      </div>
+
+      {/* Unsaved Changes Confirmation Dialog */}
+      {showConfirmDialog && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-background border border-secondary rounded-lg p-6 max-w-md mx-4 shadow-xl">
+            <h3 className="text-lg font-semibold text-text mb-3">Unsaved Changes</h3>
+            <p className="text-text-muted mb-6">
+              You have unsaved changes. Would you like to save them before closing?
+            </p>
+            <div className="flex justify-end gap-3">
+              <button
+                onClick={() => setShowConfirmDialog(false)}
+                className="btn-secondary px-4 py-2 text-sm"
+              >
+                Continue Editing
+              </button>
+              <button
+                onClick={handleDiscardChanges}
+                className="px-4 py-2 text-sm bg-error/10 text-error hover:bg-error/20 rounded-lg transition-colors"
+              >
+                Discard
+              </button>
+              <button
+                onClick={handleSaveAndClose}
+                disabled={isSaving}
+                className="btn-primary px-4 py-2 text-sm"
+              >
+                {isSaving ? 'Saving...' : 'Save'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

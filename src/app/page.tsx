@@ -256,25 +256,13 @@ export default function Home() {
         <div className="fixed inset-0 z-50 flex items-start justify-center bg-black/50 overflow-y-auto">
           <div className="min-h-screen py-8 px-4 w-full max-w-2xl">
             <div className="bg-background rounded-lg shadow-xl">
-              <div className="border-b border-secondary px-6 py-4 flex items-center justify-between">
-                <h2 className="text-xl font-bold text-text">Settings</h2>
-                <button
-                  onClick={() => setShowSettings(false)}
-                  className="text-text-muted hover:text-text transition-colors"
-                >
-                  <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                  </svg>
-                </button>
-              </div>
-              <div className="p-6">
-                <SettingsPanel
-                  settings={settings}
-                  onSave={updateSettings}
-                  isLoading={settingsLoading}
-                  onClose={() => setShowSettings(false)}
-                />
-              </div>
+              <SettingsPanel
+                settings={settings}
+                onSave={updateSettings}
+                isLoading={settingsLoading}
+                onClose={() => setShowSettings(false)}
+                showHeader={true}
+              />
             </div>
           </div>
         </div>
