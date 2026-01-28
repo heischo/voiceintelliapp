@@ -207,20 +207,20 @@ For personvernrelaterte spørsmål, vennligst åpne en sak på vårt GitHub-repo
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│                     Your Device                              │
-│  ┌─────────────┐    ┌─────────────┐    ┌─────────────┐     │
+│                     Your Device                             │
+│  ┌─────────────┐     ┌─────────────┐    ┌─────────────┐     │
 │  │   Audio     │───▶│  whisper    │───▶│   Local     │     │
-│  │  Recording  │    │    .cpp     │    │  Storage    │     │
-│  └─────────────┘    └─────────────┘    └─────────────┘     │
-│         │                                     │              │
-│         │ (optional)              ┌───────────┘              │
-│         ▼                         ▼                          │
+│  │  Recording  │     │    .cpp     │    │  Storage    │     │
+│  └─────────────┘     └─────────────┘    └─────────────┘     │
+│         │                                     │             │
+│         │ (optional)              ┌───────────┘             │
+│         ▼                         ▼                         │
 │  ┌─────────────┐           ┌─────────────┐                  │
 │  │   Cloud     │           │   Ollama    │ (local LLM)      │
 │  │    STT      │           │  Enrichment │                  │
 │  └─────────────┘           └─────────────┘                  │
-│         │                         │                          │
-│         │  (only if configured)   │ (stays on device)        │
+│         │                         │                         │
+│         │  (only if configured)   │ (stays on device)       │
 └─────────┼─────────────────────────┼─────────────────────────┘
           │                         │
           │    Only if you choose   │
