@@ -709,7 +709,7 @@ export function SettingsPanel({ settings, onSave, isLoading, onClose }: Settings
               >
                 {availableModels.filter(m => m.installed).map((model) => (
                   <option key={model.id} value={model.id}>
-                    {model.name} ({model.size}) {model.isMultilingual ? '- Multilingual' : '- English only'}
+                    {model.name} ({model.size})
                   </option>
                 ))}
               </select>
