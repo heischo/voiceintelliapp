@@ -3,7 +3,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import type { Settings, EnrichmentMode, WhisperModel, DownloadProgress, NotionPage } from '../types';
-import { searchNotionPages, testNotionConnection } from '../lib/notion';
 import {
   COMMON_HOTKEYS,
   ENRICHMENT_MODES,
@@ -13,7 +12,7 @@ import {
 } from '../lib/config';
 import { MicrophoneSelector } from './MicrophoneSelector';
 import { OPENROUTER_MODELS } from '../providers/openrouter';
-import { getAppVersion, getAvailableModels, downloadWhisperModel, deleteWhisperModel, onDownloadProgress, checkOllamaAvailable, getOllamaModels, pullOllamaModel, onOllamaPullProgress } from '../lib/api';
+import { getAppVersion, getAvailableModels, downloadWhisperModel, deleteWhisperModel, onDownloadProgress, checkOllamaAvailable, getOllamaModels, pullOllamaModel, onOllamaPullProgress, notionTestConnection, notionSearchPages } from '../lib/api';
 import type { OllamaServiceStatus, OllamaModel, OllamaPullProgress } from '../types/llm';
 
 // OpenAI models
@@ -445,13 +444,28 @@ export function SettingsPanel({ settings, onSave, isLoading, onClose }: Settings
     setNotionPages([]);
 
     try {
-      await testNotionConnection(apiKeys.notion);
-      const pages = await searchNotionPages(apiKeys.notion);
+      const testResult = await notionTestConnection(apiKeys.notion);
+      if (!testResult.success) {
+        setNotionTestResult('error');
+        setNotionTestError(testResult.message);
+        return;
+      }
+
+      const searchResult = await notionSearchPages(apiKeys.notion);
+      if (!searchResult.success) {
+        setNotionTestResult('error');
+        setNotionTestError(searchResult.error || 'Failed to search pages');
+        return;
+      }
+
+      // Map the pages to the expected format
+      const pages = searchResult.pages.map(p => ({
+        id: p.id,
+        name: p.name,
+        type: p.pageType as 'page' | 'database',
+      }));
       setNotionPages(pages);
       setNotionTestResult('success');
-
-      // If there are pages and no default is set, don't auto-select
-      // User should explicitly choose
     } catch (error) {
       setNotionTestResult('error');
       setNotionTestError(error instanceof Error ? error.message : 'Connection failed');

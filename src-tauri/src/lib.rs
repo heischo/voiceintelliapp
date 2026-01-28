@@ -85,6 +85,9 @@ pub fn run() {
             commands::get_ollama_models,
             commands::delete_ollama_model,
             commands::pull_ollama_model,
+            commands::notion_test_connection,
+            commands::notion_search_pages,
+            commands::notion_create_page,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

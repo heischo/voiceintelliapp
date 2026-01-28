@@ -10,11 +10,7 @@ import { writeTextFile, writeFile, readTextFile, exists, mkdir, BaseDirectory } 
 import type { Settings, WhisperModel, DownloadProgress, DownloadResult } from '../types';
 import { generatePdfAsBytes, type PdfOptions } from './pdf';
 import {
-  NotionClient,
   NotionError,
-  createPage,
-  validateApiKey,
-  validateApiKeyFormat,
   type CreatePageOptions,
   type CreatePageResult,
 } from './notion';
@@ -430,7 +426,68 @@ export async function onOllamaPullProgress(
 }
 
 // ============================================
-// Notion Export
+// Notion API (via Tauri backend)
+// ============================================
+
+export interface NotionTestResult {
+  success: boolean;
+  message: string;
+}
+
+export interface NotionPage {
+  id: string;
+  name: string;
+  pageType: string;
+}
+
+export interface NotionSearchResult {
+  success: boolean;
+  pages: NotionPage[];
+  error?: string;
+}
+
+export interface NotionCreatePageResult {
+  success: boolean;
+  pageId?: string;
+  url?: string;
+  error?: string;
+}
+
+/**
+ * Test Notion API connection
+ */
+export async function notionTestConnection(apiKey: string): Promise<NotionTestResult> {
+  return invoke<NotionTestResult>('notion_test_connection', { apiKey });
+}
+
+/**
+ * Search for accessible pages and databases in Notion
+ */
+export async function notionSearchPages(apiKey: string): Promise<NotionSearchResult> {
+  return invoke<NotionSearchResult>('notion_search_pages', { apiKey });
+}
+
+/**
+ * Create a new page in Notion
+ */
+export async function notionCreatePage(
+  apiKey: string,
+  parentId: string,
+  parentType: string,
+  title: string,
+  content: string
+): Promise<NotionCreatePageResult> {
+  return invoke<NotionCreatePageResult>('notion_create_page', {
+    apiKey,
+    parentId,
+    parentType,
+    title,
+    content,
+  });
+}
+
+// ============================================
+// Notion Export (High-level)
 // ============================================
 
 export interface ExportToNotionOptions {
@@ -447,38 +504,31 @@ export async function exportToNotion(
   content: string,
   apiKey: string,
   options: ExportToNotionOptions = {}
-): Promise<CreatePageResult> {
+): Promise<{ success: boolean; url?: string; error?: string }> {
   const { title = 'Transcript', parentPageId, databaseId } = options;
 
   // If no specific parent is provided, get the default from settings
-  let targetPageId = parentPageId;
-  let targetDatabaseId = databaseId;
+  let targetId = parentPageId || databaseId;
+  let targetType = databaseId ? 'database' : 'page';
 
-  if (!targetPageId && !targetDatabaseId) {
+  if (!targetId) {
     const settings = await getSettings();
     if (settings?.notionDefaultPageId) {
-      // Determine if it's a page or database based on how it was stored
-      // For simplicity, we'll try as page first
-      targetPageId = settings.notionDefaultPageId;
+      targetId = settings.notionDefaultPageId;
+      // Check if it's a database (stored page names starting with 📊)
+      targetType = settings.notionDefaultPageName?.startsWith('📊') ? 'database' : 'page';
     }
   }
 
-  if (!targetPageId && !targetDatabaseId) {
-    throw new NotionError(
-      'No destination page configured. Please set a default Notion page in Settings.',
-      'NO_DESTINATION'
-    );
+  if (!targetId) {
+    return {
+      success: false,
+      error: 'No destination page configured. Please set a default Notion page in Settings.',
+    };
   }
 
-  return createPage(
-    { apiKey },
-    {
-      title,
-      content,
-      parentPageId: targetPageId,
-      databaseId: targetDatabaseId,
-    }
-  );
+  const result = await notionCreatePage(apiKey, targetId, targetType, title, content);
+  return result;
 }
 
 // ============================================

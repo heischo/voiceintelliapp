@@ -1306,3 +1306,364 @@ fn get_model_path(model: &str, language: &str) -> Result<String, String> {
         extra_hint
     ))
 }
+
+// ============================================
+// Notion API Commands
+// ============================================
+
+const NOTION_API_VERSION: &str = "2022-06-28";
+const NOTION_BASE_URL: &str = "https://api.notion.com/v1";
+
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct NotionTestResult {
+    pub success: bool,
+    pub message: String,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct NotionPage {
+    pub id: String,
+    pub name: String,
+    #[serde(rename = "type")]
+    pub page_type: String,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct NotionSearchResult {
+    pub success: bool,
+    pub pages: Vec<NotionPage>,
+    pub error: Option<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct NotionCreatePageResult {
+    pub success: bool,
+    pub page_id: Option<String>,
+    pub url: Option<String>,
+    pub error: Option<String>,
+}
+
+/// Test Notion API connection by making a search request
+#[tauri::command]
+pub async fn notion_test_connection(api_key: String) -> NotionTestResult {
+    // Validate API key format
+    if !api_key.starts_with("secret_") && !api_key.starts_with("ntn_") {
+        return NotionTestResult {
+            success: false,
+            message: "Invalid API key format. Notion API keys should start with 'secret_' or 'ntn_'.".to_string(),
+        };
+    }
+
+    let client = match reqwest::Client::builder().build() {
+        Ok(c) => c,
+        Err(e) => {
+            return NotionTestResult {
+                success: false,
+                message: format!("Failed to create HTTP client: {}", e),
+            };
+        }
+    };
+
+    // Use /search endpoint instead of /users/me - doesn't require "Read user information" permission
+    let response = client
+        .post(format!("{}/search", NOTION_BASE_URL))
+        .header("Authorization", format!("Bearer {}", api_key))
+        .header("Notion-Version", NOTION_API_VERSION)
+        .header("Content-Type", "application/json")
+        .body(r#"{"page_size": 1}"#)
+        .send()
+        .await;
+
+    match response {
+        Ok(resp) => {
+            if resp.status().is_success() {
+                NotionTestResult {
+                    success: true,
+                    message: "Connection successful".to_string(),
+                }
+            } else if resp.status().as_u16() == 401 {
+                NotionTestResult {
+                    success: false,
+                    message: "Invalid API key".to_string(),
+                }
+            } else {
+                let status = resp.status();
+                let body = resp.text().await.unwrap_or_default();
+                NotionTestResult {
+                    success: false,
+                    message: format!("API error ({}): {}", status, body),
+                }
+            }
+        }
+        Err(e) => NotionTestResult {
+            success: false,
+            message: format!("Network error: {}", e),
+        },
+    }
+}
+
+/// Search for accessible pages and databases in Notion
+#[tauri::command]
+pub async fn notion_search_pages(api_key: String) -> NotionSearchResult {
+    let client = match reqwest::Client::builder().build() {
+        Ok(c) => c,
+        Err(e) => {
+            return NotionSearchResult {
+                success: false,
+                pages: vec![],
+                error: Some(format!("Failed to create HTTP client: {}", e)),
+            };
+        }
+    };
+
+    let mut all_pages: Vec<NotionPage> = vec![];
+
+    // Search for pages
+    let page_response = client
+        .post(format!("{}/search", NOTION_BASE_URL))
+        .header("Authorization", format!("Bearer {}", api_key))
+        .header("Notion-Version", NOTION_API_VERSION)
+        .header("Content-Type", "application/json")
+        .body(r#"{"filter": {"value": "page", "property": "object"}, "sort": {"direction": "descending", "timestamp": "last_edited_time"}, "page_size": 50}"#)
+        .send()
+        .await;
+
+    match page_response {
+        Ok(resp) => {
+            if resp.status().is_success() {
+                if let Ok(json) = resp.json::<serde_json::Value>().await {
+                    if let Some(results) = json.get("results").and_then(|r| r.as_array()) {
+                        for item in results {
+                            let id = item.get("id").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                            let name = extract_page_title(item).unwrap_or_else(|| "Untitled".to_string());
+                            all_pages.push(NotionPage {
+                                id,
+                                name,
+                                page_type: "page".to_string(),
+                            });
+                        }
+                    }
+                }
+            } else if resp.status().as_u16() == 401 {
+                return NotionSearchResult {
+                    success: false,
+                    pages: vec![],
+                    error: Some("Invalid API key".to_string()),
+                };
+            } else {
+                let status = resp.status();
+                let body = resp.text().await.unwrap_or_default();
+                return NotionSearchResult {
+                    success: false,
+                    pages: vec![],
+                    error: Some(format!("API error ({}): {}", status, body)),
+                };
+            }
+        }
+        Err(e) => {
+            return NotionSearchResult {
+                success: false,
+                pages: vec![],
+                error: Some(format!("Network error: {}", e)),
+            };
+        }
+    }
+
+    // Search for databases
+    let db_response = client
+        .post(format!("{}/search", NOTION_BASE_URL))
+        .header("Authorization", format!("Bearer {}", api_key))
+        .header("Notion-Version", NOTION_API_VERSION)
+        .header("Content-Type", "application/json")
+        .body(r#"{"filter": {"value": "database", "property": "object"}, "sort": {"direction": "descending", "timestamp": "last_edited_time"}, "page_size": 50}"#)
+        .send()
+        .await;
+
+    if let Ok(resp) = db_response {
+        if resp.status().is_success() {
+            if let Ok(json) = resp.json::<serde_json::Value>().await {
+                if let Some(results) = json.get("results").and_then(|r| r.as_array()) {
+                    for item in results {
+                        let id = item.get("id").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                        let name = extract_database_title(item).unwrap_or_else(|| "Untitled Database".to_string());
+                        all_pages.push(NotionPage {
+                            id,
+                            name: format!("📊 {}", name),
+                            page_type: "database".to_string(),
+                        });
+                    }
+                }
+            }
+        }
+    }
+
+    NotionSearchResult {
+        success: true,
+        pages: all_pages,
+        error: None,
+    }
+}
+
+/// Create a new page in Notion
+#[tauri::command]
+pub async fn notion_create_page(
+    api_key: String,
+    parent_id: String,
+    parent_type: String,
+    title: String,
+    content: String,
+) -> NotionCreatePageResult {
+    let client = match reqwest::Client::builder().build() {
+        Ok(c) => c,
+        Err(e) => {
+            return NotionCreatePageResult {
+                success: false,
+                page_id: None,
+                url: None,
+                error: Some(format!("Failed to create HTTP client: {}", e)),
+            };
+        }
+    };
+
+    // Build content blocks
+    let blocks: Vec<serde_json::Value> = content
+        .split("\n\n")
+        .filter(|p| !p.trim().is_empty())
+        .map(|paragraph| {
+            serde_json::json!({
+                "object": "block",
+                "type": "paragraph",
+                "paragraph": {
+                    "rich_text": [{
+                        "type": "text",
+                        "text": {
+                            "content": paragraph.trim()
+                        }
+                    }]
+                }
+            })
+        })
+        .collect();
+
+    // Build request body based on parent type
+    let request_body = if parent_type == "database" {
+        serde_json::json!({
+            "parent": { "database_id": parent_id },
+            "properties": {
+                "title": {
+                    "title": [{ "text": { "content": title } }]
+                }
+            },
+            "children": blocks
+        })
+    } else {
+        serde_json::json!({
+            "parent": { "page_id": parent_id },
+            "properties": {
+                "title": {
+                    "title": [{ "text": { "content": title } }]
+                }
+            },
+            "children": blocks
+        })
+    };
+
+    let response = client
+        .post(format!("{}/pages", NOTION_BASE_URL))
+        .header("Authorization", format!("Bearer {}", api_key))
+        .header("Notion-Version", NOTION_API_VERSION)
+        .header("Content-Type", "application/json")
+        .body(request_body.to_string())
+        .send()
+        .await;
+
+    match response {
+        Ok(resp) => {
+            if resp.status().is_success() {
+                if let Ok(json) = resp.json::<serde_json::Value>().await {
+                    let page_id = json.get("id").and_then(|v| v.as_str()).map(String::from);
+                    let url = json.get("url").and_then(|v| v.as_str()).map(String::from);
+                    NotionCreatePageResult {
+                        success: true,
+                        page_id,
+                        url,
+                        error: None,
+                    }
+                } else {
+                    NotionCreatePageResult {
+                        success: true,
+                        page_id: None,
+                        url: None,
+                        error: None,
+                    }
+                }
+            } else {
+                let status = resp.status();
+                let body = resp.text().await.unwrap_or_default();
+                let error_msg = match status.as_u16() {
+                    401 => "Invalid or expired API key".to_string(),
+                    403 => "Access denied. Make sure the integration has access to the parent page or database.".to_string(),
+                    404 => "Parent page or database not found. Check the ID and ensure the integration has access.".to_string(),
+                    _ => format!("API error ({}): {}", status, body),
+                };
+                NotionCreatePageResult {
+                    success: false,
+                    page_id: None,
+                    url: None,
+                    error: Some(error_msg),
+                }
+            }
+        }
+        Err(e) => NotionCreatePageResult {
+            success: false,
+            page_id: None,
+            url: None,
+            error: Some(format!("Network error: {}", e)),
+        },
+    }
+}
+
+/// Helper function to extract page title from Notion API response
+fn extract_page_title(item: &serde_json::Value) -> Option<String> {
+    let properties = item.get("properties")?;
+
+    // Try "title" property first
+    if let Some(title_prop) = properties.get("title") {
+        if let Some(title_array) = title_prop.get("title").and_then(|t| t.as_array()) {
+            if let Some(first) = title_array.first() {
+                if let Some(text) = first.get("plain_text").and_then(|t| t.as_str()) {
+                    return Some(text.to_string());
+                }
+            }
+        }
+    }
+
+    // Try "Name" property
+    if let Some(name_prop) = properties.get("Name") {
+        if let Some(title_array) = name_prop.get("title").and_then(|t| t.as_array()) {
+            if let Some(first) = title_array.first() {
+                if let Some(text) = first.get("plain_text").and_then(|t| t.as_str()) {
+                    return Some(text.to_string());
+                }
+            }
+        }
+    }
+
+    None
+}
+
+/// Helper function to extract database title from Notion API response
+fn extract_database_title(item: &serde_json::Value) -> Option<String> {
+    if let Some(title_array) = item.get("title").and_then(|t| t.as_array()) {
+        if let Some(first) = title_array.first() {
+            if let Some(text) = first.get("plain_text").and_then(|t| t.as_str()) {
+                return Some(text.to_string());
+            }
+        }
+    }
+    None
+}
