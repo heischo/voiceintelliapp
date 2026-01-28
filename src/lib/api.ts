@@ -7,7 +7,7 @@ import { register, unregister, isRegistered } from '@tauri-apps/plugin-global-sh
 import { Store } from '@tauri-apps/plugin-store';
 import { save } from '@tauri-apps/plugin-dialog';
 import { writeTextFile, writeFile, readTextFile, exists, mkdir, BaseDirectory } from '@tauri-apps/plugin-fs';
-import type { Settings, NotionSettings } from '../types';
+import type { Settings, NotionSettings, WhisperModel, DownloadProgress, DownloadResult } from '../types';
 import { generatePdfAsBytes, type PdfOptions } from './pdf';
 import {
   NotionClient,
@@ -146,36 +146,6 @@ export async function saveToFile(
   }
 }
 
-export async function saveAsPdf(
-  content: string,
-  suggestedName?: string,
-  options?: PdfOptions
-): Promise<string | null> {
-  try {
-    if (!content || content.trim().length === 0) {
-      throw new Error('Cannot save empty content as PDF');
-    }
-
-    const filePath = await save({
-      defaultPath: suggestedName || `transcript-${Date.now()}.pdf`,
-      filters: [
-        { name: 'PDF', extensions: ['pdf'] },
-        { name: 'All Files', extensions: ['*'] },
-      ],
-    });
-
-    if (filePath) {
-      const pdfBytes = generatePdfAsBytes(content, options);
-      await writeFile(filePath, pdfBytes);
-      return filePath;
-    }
-    return null;
-  } catch (error) {
-    console.error('Failed to save PDF:', error);
-    throw error;
-  }
-}
-
 export async function saveToAppData(
   filename: string,
   content: string
@@ -206,71 +176,6 @@ export async function readFromAppData(filename: string): Promise<string | null> 
     console.error('Failed to read from app data:', error);
     return null;
   }
-}
-
-// ============================================
-// Notion Integration
-// ============================================
-
-export interface ExportToNotionOptions {
-  title?: string;
-  parentPageId?: string;
-  databaseId?: string;
-}
-
-export async function exportToNotion(
-  content: string,
-  apiKey: string,
-  options?: ExportToNotionOptions
-): Promise<CreatePageResult> {
-  try {
-    if (!content || content.trim().length === 0) {
-      throw new NotionError('Cannot export empty content to Notion', 'EMPTY_CONTENT');
-    }
-
-    if (!apiKey) {
-      throw new NotionError('Notion API key is required', 'MISSING_API_KEY');
-    }
-
-    const settings: NotionSettings = {
-      apiKey,
-      parentPageId: options?.parentPageId,
-      databaseId: options?.databaseId,
-    };
-
-    const createOptions: CreatePageOptions = {
-      title: options?.title || `Transcript - ${new Date().toLocaleString()}`,
-      content,
-      parentPageId: options?.parentPageId,
-      databaseId: options?.databaseId,
-    };
-
-    const result = await createPage(settings, createOptions);
-    return result;
-  } catch (error) {
-    if (error instanceof NotionError) {
-      console.error('Notion export error:', error.message);
-      throw error;
-    }
-    console.error('Failed to export to Notion:', error);
-    throw new NotionError(
-      `Failed to export to Notion: ${error instanceof Error ? error.message : 'Unknown error'}`,
-      'EXPORT_FAILED'
-    );
-  }
-}
-
-export async function validateNotionApiKey(apiKey: string): Promise<boolean> {
-  try {
-    return await validateApiKey(apiKey);
-  } catch (error) {
-    console.error('Failed to validate Notion API key:', error);
-    throw error;
-  }
-}
-
-export function isNotionApiKeyFormatValid(apiKey: string): boolean {
-  return validateApiKeyFormat(apiKey);
 }
 
 // ============================================

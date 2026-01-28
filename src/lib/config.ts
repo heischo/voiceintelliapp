@@ -89,7 +89,7 @@ export const LLM_PROVIDERS: { value: LLMProvider; label: string; description: st
   },
 ];
 
-export const OUTPUT_TARGETS: { value: OutputTarget; label: string; description: string; comingSoon?: boolean }[] = [
+export const OUTPUT_TARGETS: { value: OutputTarget; label: string; description: string }[] = [
   {
     value: 'clipboard',
     label: 'Clipboard',
@@ -98,33 +98,17 @@ export const OUTPUT_TARGETS: { value: OutputTarget; label: string; description: 
   {
     value: 'file',
     label: 'Save to File',
-    description: 'Save as Markdown or PDF file',
+    description: 'Save as Markdown file',
   },
   {
     value: 'notion',
     label: 'Notion',
-    description: 'Export to Notion page',
+    description: 'Send directly to a Notion page',
   },
   {
     value: 'google_drive',
     label: 'Google Drive',
-    description: 'Save to Google Drive',
-    comingSoon: true,
-  },
-];
-
-export type FileFormat = 'markdown' | 'pdf';
-
-export const FILE_FORMATS: { value: FileFormat; label: string; extension: string }[] = [
-  {
-    value: 'markdown',
-    label: 'Markdown',
-    extension: 'md',
-  },
-  {
-    value: 'pdf',
-    label: 'PDF',
-    extension: 'pdf',
+    description: 'Save as document in Google Drive',
   },
 ];
 

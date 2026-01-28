@@ -2,12 +2,13 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
-import type { Settings, EnrichmentMode } from '../types';
+import type { Settings, EnrichmentMode, WhisperModel, DownloadProgress } from '../types';
 import {
   COMMON_HOTKEYS,
   ENRICHMENT_MODES,
   LANGUAGES,
   LLM_PROVIDERS,
+  OUTPUT_TARGETS,
   RETENTION_OPTIONS,
 } from '../lib/config';
 import { MicrophoneSelector } from './MicrophoneSelector';
@@ -42,12 +43,10 @@ export function SettingsPanel({ settings, onSave, isLoading, onClose }: Settings
   const [apiKeys, setApiKeys] = useState<Record<string, string>>({
     openai: settings.openaiApiKey || '',
     openrouter: settings.openrouterApiKey || '',
-    notion: settings.notionApiKey || '',
   });
   const [showApiKey, setShowApiKey] = useState<Record<string, boolean>>({
     openai: false,
     openrouter: false,
-    notion: false,
   });
   const [whisperAvailable, setWhisperAvailable] = useState<boolean | null>(null);
   const [whisperPath, setWhisperPath] = useState<string>(settings.whisperPath || '');
@@ -403,9 +402,6 @@ export function SettingsPanel({ settings, onSave, isLoading, onClose }: Settings
       if (apiKeys.openrouter) {
         settingsToSave.openrouterApiKey = apiKeys.openrouter;
       }
-      if (apiKeys.notion) {
-        settingsToSave.notionApiKey = apiKeys.notion;
-      }
       await onSave(settingsToSave);
       setSaveSuccess(true);
       // Close modal or navigate back after short delay
@@ -461,7 +457,7 @@ export function SettingsPanel({ settings, onSave, isLoading, onClose }: Settings
           }`}>
             <div className="flex items-center justify-between mb-2">
               <div className="flex items-center gap-2">
-                <span className="font-medium text-text">whisper.cpp</span>
+                <span className="font-medium text-text">Local Transcription (whisper.cpp)</span>
                 {whisperAvailable && (
                   <span className="text-xs bg-success text-black px-2 py-0.5 rounded">Installed</span>
                 )}
@@ -561,61 +557,12 @@ export function SettingsPanel({ settings, onSave, isLoading, onClose }: Settings
             )}
           </div>
 
-          {/* Cloud Fallback with API Key Input */}
+          {/* Cloud Fallback Info */}
           <div className="p-4 rounded-lg border border-secondary">
-            <div className="flex items-center justify-between mb-2">
-              <div className="flex items-center gap-2">
-                <span className="font-medium text-text">Cloud Transcription (OpenAI Whisper)</span>
-                {apiKeys.openai && (
-                  <span className="text-xs bg-success text-black px-2 py-0.5 rounded">Configured</span>
-                )}
-              </div>
-            </div>
-            <p className="text-sm text-text-muted mb-3">
-              Fallback option using OpenAI&apos;s Whisper API when local whisper.cpp is unavailable.
+            <div className="font-medium text-text mb-2">Cloud Transcription (OpenAI Whisper)</div>
+            <p className="text-sm text-text-muted">
+              Fallback option using OpenAI&apos;s Whisper API. Requires an API key configured below.
             </p>
-            <div>
-              <label className="block text-xs font-medium text-text-muted mb-1">
-                OpenAI API Key (for Whisper)
-              </label>
-              <div className="relative">
-                <input
-                  type={showApiKey.openai ? 'text' : 'password'}
-                  value={apiKeys.openai}
-                  onChange={(e) =>
-                    setApiKeys((prev) => ({
-                      ...prev,
-                      openai: e.target.value,
-                    }))
-                  }
-                  placeholder="Enter your OpenAI API key"
-                  className="input w-full pr-16 text-sm"
-                />
-                <button
-                  type="button"
-                  onClick={() =>
-                    setShowApiKey((prev) => ({
-                      ...prev,
-                      openai: !prev.openai,
-                    }))
-                  }
-                  className="absolute right-2 top-1/2 -translate-y-1/2 px-3 py-1 text-sm text-text-muted hover:text-text"
-                >
-                  {showApiKey.openai ? 'Hide' : 'Show'}
-                </button>
-              </div>
-              <p className="text-xs text-text-muted mt-1">
-                Get your API key at{' '}
-                <a
-                  href="https://platform.openai.com/api-keys"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="text-primary hover:underline"
-                >
-                  platform.openai.com/api-keys
-                </a>
-              </p>
-            </div>
           </div>
         </div>
       </section>
@@ -988,51 +935,27 @@ export function SettingsPanel({ settings, onSave, isLoading, onClose }: Settings
         </div>
       </section>
 
-      {/* Output Connections */}
+      {/* Output Settings */}
       <section className="card">
-        <h3 className="text-lg font-semibold text-primary mb-4">Output Connections</h3>
+        <h3 className="text-lg font-semibold text-primary mb-4">Output</h3>
         <div className="space-y-4">
-          {/* Notion Connection */}
-          <div className="p-4 rounded-lg border border-secondary">
-            <div className="flex items-center justify-between mb-2">
-              <div className="flex items-center gap-2">
-                <span className="font-medium text-text">Notion</span>
-                {apiKeys.notion && (
-                  <span className="text-xs bg-success text-black px-2 py-0.5 rounded">Connected</span>
-                )}
-              </div>
-            </div>
-            <p className="text-sm text-text-muted mb-3">
-              Connect to Notion to export transcripts directly to your workspace.
-            </p>
-            <div>
-              <label className="block text-xs font-medium text-text-muted mb-1">
-                Notion API Key (Integration Token)
-              </label>
-              <div className="relative">
-                <input
-                  type={showApiKey.notion ? 'text' : 'password'}
-                  value={apiKeys.notion}
-                  onChange={(e) =>
-                    setApiKeys((prev) => ({
-                      ...prev,
-                      notion: e.target.value,
-                    }))
-                  }
-                  placeholder="Enter your Notion integration token"
-                  className="input w-full pr-16 text-sm"
-                />
+          <div>
+            <label className="block text-sm font-medium text-text mb-2">
+              Default Destination
+            </label>
+            <div className="grid grid-cols-2 gap-2">
+              {OUTPUT_TARGETS.map((target) => (
                 <button
-                  type="button"
-                  onClick={() =>
-                    setShowApiKey((prev) => ({
-                      ...prev,
-                      notion: !prev.notion,
-                    }))
-                  }
-                  className="absolute right-2 top-1/2 -translate-y-1/2 px-3 py-1 text-sm text-text-muted hover:text-text"
+                  key={target.value}
+                  onClick={() => handleChange('outputTarget', target.value)}
+                  className={`p-3 rounded-lg border text-left transition-all
+                    ${localSettings.outputTarget === target.value
+                      ? 'border-primary bg-primary/10'
+                      : 'border-secondary hover:border-primary/50'
+                    }`}
                 >
-                  {showApiKey.notion ? 'Hide' : 'Show'}
+                  <div className="font-medium text-text">{target.label}</div>
+                  <div className="text-xs text-text-muted">{target.description}</div>
                 </button>
               ))}
             </div>
@@ -1109,6 +1032,136 @@ export function SettingsPanel({ settings, onSave, isLoading, onClose }: Settings
                   ${localSettings.showNotifications ? 'translate-x-6' : ''}`}
               />
             </button>
+          </div>
+        </div>
+      </section>
+
+      {/* Offline Components Section */}
+      <section className="card">
+        <h3 className="text-lg font-semibold text-primary mb-4">Offline Components</h3>
+        <div className="space-y-4">
+          <p className="text-sm text-text-muted">
+            Download whisper models for local, private transcription. Larger models are more accurate but slower.
+          </p>
+
+          {isLoadingModels ? (
+            <div className="flex items-center justify-center py-8">
+              <svg className="animate-spin h-6 w-6 text-primary" viewBox="0 0 24 24">
+                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
+                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+              </svg>
+              <span className="ml-2 text-text-muted">Loading models...</span>
+            </div>
+          ) : availableModels.length === 0 ? (
+            <div className="text-center py-8 text-text-muted">
+              <p>No models available. Please ensure whisper.cpp is installed.</p>
+              <button
+                onClick={loadModels}
+                className="btn-secondary mt-4 text-sm py-2 px-4"
+              >
+                Retry
+              </button>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {availableModels.map((model) => {
+                const isDownloading = model.id in downloadingModels;
+                const downloadProgress = downloadingModels[model.id] || 0;
+                const hasError = model.id in downloadErrors;
+
+                return (
+                  <div
+                    key={model.id}
+                    className={`p-4 rounded-lg border ${
+                      model.installed ? 'border-success bg-success/10' : 'border-secondary'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between">
+                      <div className="flex-1">
+                        <div className="flex items-center gap-2">
+                          <span className="font-medium text-text">{model.name}</span>
+                          {model.installed && (
+                            <span className="text-xs bg-success text-black px-2 py-0.5 rounded">
+                              Installed
+                            </span>
+                          )}
+                          {model.isMultilingual && (
+                            <span className="text-xs bg-primary/20 text-primary px-2 py-0.5 rounded">
+                              Multilingual
+                            </span>
+                          )}
+                        </div>
+                        <div className="text-sm text-text-muted mt-1">
+                          Size: {model.size}
+                        </div>
+                        {model.installed && model.installedPath && (
+                          <div className="text-xs text-text-muted bg-secondary/50 rounded p-2 mt-2 font-mono break-all">
+                            {model.installedPath}
+                          </div>
+                        )}
+                      </div>
+
+                      <div className="ml-4">
+                        {isDownloading ? (
+                          <div className="flex flex-col items-end">
+                            <div className="w-32 h-2 bg-secondary rounded-full overflow-hidden">
+                              <div
+                                className="h-full bg-primary transition-all duration-300"
+                                style={{ width: `${downloadProgress}%` }}
+                              />
+                            </div>
+                            <span className="text-xs text-text-muted mt-1">
+                              {downloadProgress.toFixed(0)}%
+                            </span>
+                          </div>
+                        ) : model.installed ? (
+                          <span className="text-success text-sm flex items-center gap-1">
+                            <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                              <path
+                                fillRule="evenodd"
+                                d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z"
+                                clipRule="evenodd"
+                              />
+                            </svg>
+                            Ready
+                          </span>
+                        ) : (
+                          <button
+                            onClick={() => handleDownloadModel(model.id)}
+                            className="btn-secondary text-sm py-2 px-4"
+                          >
+                            Download
+                          </button>
+                        )}
+                      </div>
+                    </div>
+
+                    {hasError && (
+                      <div className="mt-2 text-error text-sm flex items-center gap-1">
+                        <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                          <path
+                            fillRule="evenodd"
+                            d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z"
+                            clipRule="evenodd"
+                          />
+                        </svg>
+                        {downloadErrors[model.id]}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
+          <div className="p-4 rounded-lg border border-secondary bg-secondary/30">
+            <div className="font-medium text-text mb-2">Model Recommendations</div>
+            <ul className="text-sm text-text-muted space-y-1">
+              <li>• <strong>Tiny/Base:</strong> Fast, good for quick notes and short recordings</li>
+              <li>• <strong>Small:</strong> Balanced speed and accuracy for most use cases</li>
+              <li>• <strong>Medium:</strong> Higher accuracy, good for important recordings</li>
+              <li>• <strong>Large:</strong> Best accuracy, requires more memory and processing time</li>
+            </ul>
           </div>
         </div>
       </section>

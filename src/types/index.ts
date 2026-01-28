@@ -9,8 +9,9 @@ export type EnrichmentMode =
   | 'summary'
   | 'custom';
 
-export type OutputTarget = 'clipboard' | 'file' | 'notion' | 'google_drive';
+export type OutputTarget = 'clipboard' | 'file';
 
+export type LLMProvider = 'openai' | 'openrouter' | 'ollama';
 export type LLMProvider = 'openai' | 'openrouter' | 'ollama';
 
 export type Language = 'en' | 'de' | 'no';
@@ -18,12 +19,6 @@ export type Language = 'en' | 'de' | 'no';
 export interface EnrichmentOptions {
   sentences?: number;      // For summary mode
   customPrompt?: string;   // For custom mode
-}
-
-export interface NotionSettings {
-  apiKey: string;
-  parentPageId?: string;
-  databaseId?: string;
 }
 
 export interface Settings {
@@ -89,6 +84,50 @@ export interface AppState {
   enrichedContent: string | null;
   error: string | null;
   isProcessing: boolean;
+}
+
+// Offline Component Types
+
+export type OfflineComponentType = 'whisper-model' | 'language-pack';
+
+export type OfflineComponentStatus = 'not-installed' | 'installed' | 'downloading' | 'updating' | 'error';
+
+export interface OfflineComponent {
+  id: string;
+  name: string;
+  type: OfflineComponentType;
+  size: string;
+  sizeBytes: number;
+  downloadUrl: string;
+  status: OfflineComponentStatus;
+  installedPath?: string;
+  version?: string;
+  description?: string;
+}
+
+export interface WhisperModel {
+  id: string;
+  name: string;
+  size: string;
+  sizeBytes: number;
+  downloadUrl: string;
+  installed: boolean;
+  installedPath?: string;
+  isMultilingual: boolean;
+}
+
+export interface DownloadProgress {
+  modelId: string;
+  downloaded: number;
+  total: number;
+  percentage: number;
+  status: 'starting' | 'downloading' | 'completed' | 'error';
+}
+
+export interface DownloadResult {
+  success: boolean;
+  message: string;
+  modelPath?: string;
 }
 
 // Default settings
