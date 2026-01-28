@@ -571,6 +571,7 @@ export default function Home() {
             </div>
             <p className="mt-6 text-text">Transcribing audio...</p>
             <p className="text-sm text-text-muted mt-2">Using whisper for speech-to-text</p>
+            <p className="text-xs text-text-muted mt-4">This may take a moment, even for short recordings</p>
           </div>
         )}
 

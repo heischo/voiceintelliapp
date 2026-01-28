@@ -47,16 +47,8 @@ export function SettingsPanel({ settings, onSave, isLoading, onClose, showHeader
     notion: settings.notionApiKey || '',
   });
 
-  // Track original values to detect changes
-  const [originalSettings] = useState(() => JSON.stringify(settings));
-  const [originalApiKeys] = useState<Record<string, string>>(() => ({
-    openai: settings.openaiApiKey || '',
-    openrouter: settings.openrouterApiKey || '',
-    openaiWhisper: settings.openaiWhisperApiKey || '',
-    notion: settings.notionApiKey || '',
-  }));
-  const [originalNotionPageId] = useState(settings.notionDefaultPageId || '');
-  const [originalWhisperPath] = useState(settings.whisperPath || '');
+  // Track if user has made any changes
+  const [hasUserMadeChanges, setHasUserMadeChanges] = useState(false);
 
   // Confirmation dialog state
   const [showConfirmDialog, setShowConfirmDialog] = useState(false);
@@ -490,6 +482,7 @@ export function SettingsPanel({ settings, onSave, isLoading, onClose, showHeader
   };
 
   const handleChange = <K extends keyof Settings>(key: K, value: Settings[K]) => {
+    setHasUserMadeChanges(true);
     setLocalSettings((prev) => {
       const newSettings = { ...prev, [key]: value };
 
@@ -575,30 +568,8 @@ export function SettingsPanel({ settings, onSave, isLoading, onClose, showHeader
 
   // Check if there are unsaved changes
   const hasUnsavedChanges = useCallback(() => {
-    // Compare localSettings with original
-    if (JSON.stringify(localSettings) !== originalSettings) {
-      return true;
-    }
-
-    // Compare API keys
-    for (const key of Object.keys(apiKeys)) {
-      if (apiKeys[key] !== originalApiKeys[key]) {
-        return true;
-      }
-    }
-
-    // Compare Notion page ID
-    if (notionDefaultPageId !== originalNotionPageId) {
-      return true;
-    }
-
-    // Compare whisper path
-    if (whisperPath !== originalWhisperPath) {
-      return true;
-    }
-
-    return false;
-  }, [localSettings, originalSettings, apiKeys, originalApiKeys, notionDefaultPageId, originalNotionPageId, whisperPath, originalWhisperPath]);
+    return hasUserMadeChanges;
+  }, [hasUserMadeChanges]);
 
   const handleCancel = () => {
     if (hasUnsavedChanges()) {
@@ -781,7 +752,10 @@ export function SettingsPanel({ settings, onSave, isLoading, onClose, showHeader
                   <input
                     type="text"
                     value={whisperPath}
-                    onChange={(e) => setWhisperPath(e.target.value)}
+                    onChange={(e) => {
+                      setHasUserMadeChanges(true);
+                      setWhisperPath(e.target.value);
+                    }}
                     placeholder="Path to whisper executable..."
                     className="input flex-1 text-sm"
                   />
@@ -885,12 +859,13 @@ export function SettingsPanel({ settings, onSave, isLoading, onClose, showHeader
                 <input
                   type={showApiKey.openaiWhisper ? 'text' : 'password'}
                   value={apiKeys.openaiWhisper}
-                  onChange={(e) =>
+                  onChange={(e) => {
+                    setHasUserMadeChanges(true);
                     setApiKeys((prev) => ({
                       ...prev,
                       openaiWhisper: e.target.value,
-                    }))
-                  }
+                    }));
+                  }}
                   placeholder="Enter your OpenAI API key for transcription"
                   className="input w-full pr-20"
                 />
@@ -1251,12 +1226,13 @@ export function SettingsPanel({ settings, onSave, isLoading, onClose, showHeader
                 <input
                   type={showApiKey[localSettings.llmProvider] ? 'text' : 'password'}
                   value={apiKeys[localSettings.llmProvider]}
-                  onChange={(e) =>
+                  onChange={(e) => {
+                    setHasUserMadeChanges(true);
                     setApiKeys((prev) => ({
                       ...prev,
                       [localSettings.llmProvider]: e.target.value,
-                    }))
-                  }
+                    }));
+                  }}
                   placeholder={`Enter your ${localSettings.llmProvider === 'openai' ? 'OpenAI' : 'OpenRouter'} API key`}
                   className="input w-full pr-20"
                 />
@@ -1422,6 +1398,7 @@ export function SettingsPanel({ settings, onSave, isLoading, onClose, showHeader
                   type={showApiKey.notion ? 'text' : 'password'}
                   value={apiKeys.notion}
                   onChange={(e) => {
+                    setHasUserMadeChanges(true);
                     setApiKeys((prev) => ({
                       ...prev,
                       notion: e.target.value,
@@ -1517,6 +1494,7 @@ export function SettingsPanel({ settings, onSave, isLoading, onClose, showHeader
                     <select
                       value={notionDefaultPageId}
                       onChange={(e) => {
+                        setHasUserMadeChanges(true);
                         const selectedPage = notionPages.find(p => p.id === e.target.value);
                         setNotionDefaultPageId(e.target.value);
                         setNotionDefaultPageName(selectedPage?.name || '');
