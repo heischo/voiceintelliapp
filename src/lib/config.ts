@@ -70,6 +70,7 @@ export const LANGUAGES: { value: Language; label: string; flag: string }[] = [
   { value: 'en', label: 'English', flag: '🇬🇧' },
   { value: 'de', label: 'Deutsch', flag: '🇩🇪' },
   { value: 'no', label: 'Norsk', flag: '🇳🇴' },
+  { value: 'auto', label: 'Other', flag: '🌍' },
 ];
 
 export const LLM_PROVIDERS: { value: LLMProvider; label: string; description: string }[] = [

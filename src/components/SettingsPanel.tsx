@@ -566,7 +566,7 @@ export function SettingsPanel({ settings, onSave, isLoading, onClose }: Settings
             <label className="block text-sm font-medium text-text mb-2">
               Transcription Language
             </label>
-            <div className="grid grid-cols-3 gap-2">
+            <div className="grid grid-cols-4 gap-2">
               {LANGUAGES.map((lang) => (
                 <button
                   key={lang.value}

@@ -11,6 +11,7 @@ const LANGUAGE_INSTRUCTIONS: Record<Language, string> = {
   en: 'Respond in English.',
   de: 'Antworte auf Deutsch.',
   no: 'Svar på norsk.',
+  auto: 'Respond in the same language as the transcript.',
 };
 
 export const ENRICHMENT_PROMPTS: Record<EnrichmentMode, EnrichmentPrompt> = {

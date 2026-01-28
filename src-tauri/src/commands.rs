@@ -438,9 +438,15 @@ pub async fn transcribe_audio(
     // Standard whisper.cpp CLI: main -m <model> -f <audio> -l <lang>
     let mut cmd = Command::new(&whisper_cmd);
     cmd.arg("-m").arg(&model_path)
-       .arg("-f").arg(&wav_path)
-       .arg("-l").arg(&language)
-       .arg("--no-timestamps")
+       .arg("-f").arg(&wav_path);
+
+    // Only pass language parameter if not auto-detect
+    // When language is "auto", whisper will automatically detect the language
+    if language != "auto" {
+        cmd.arg("-l").arg(&language);
+    }
+
+    cmd.arg("--no-timestamps")
        .arg("-otxt");  // Output as text
 
     let cmd_str = format!("{:?}", cmd);
@@ -1186,9 +1192,9 @@ pub async fn pull_ollama_model(
 
 /// Get the path to the whisper model
 fn get_model_path(model: &str, language: &str) -> Result<String, String> {
-    // Use multilingual model for non-English languages
+    // Use multilingual model for non-English languages and auto-detect
     // English-only models (.en) only work for English
-    let use_multilingual = language != "en";
+    let use_multilingual = language != "en";  // "auto", "de", "no", etc. all use multilingual
 
     let model_name = if use_multilingual {
         // Multilingual models (support all languages including German, Norwegian, etc.)

@@ -13,7 +13,7 @@ export type OutputTarget = 'clipboard' | 'file' | 'notion' | 'google_drive';
 
 export type LLMProvider = 'openai' | 'openrouter' | 'ollama';
 
-export type Language = 'en' | 'de' | 'no';
+export type Language = 'en' | 'de' | 'no' | 'auto';
 
 export interface EnrichmentOptions {
   sentences?: number;      // For summary mode
@@ -174,4 +174,5 @@ export const LANGUAGE_LABELS: Record<Language, string> = {
   en: 'English',
   de: 'Deutsch',
   no: 'Norsk',
+  auto: 'Other (Auto-detect)',
 };
