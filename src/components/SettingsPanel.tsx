@@ -461,7 +461,23 @@ export function SettingsPanel({ settings, onSave, isLoading, onClose }: Settings
   };
 
   const handleChange = <K extends keyof Settings>(key: K, value: Settings[K]) => {
-    setLocalSettings((prev) => ({ ...prev, [key]: value }));
+    setLocalSettings((prev) => {
+      const newSettings = { ...prev, [key]: value };
+
+      // When changing language to non-English, ensure a multilingual model is selected
+      if (key === 'language' && value !== 'en') {
+        const currentModel = availableModels.find(m => m.id === prev.whisperModel);
+        // If current model is English-only, switch to a multilingual one
+        if (currentModel && !currentModel.isMultilingual) {
+          const multilingualModel = availableModels.find(m => m.installed && m.isMultilingual);
+          if (multilingualModel) {
+            newSettings.whisperModel = multilingualModel.id;
+          }
+        }
+      }
+
+      return newSettings;
+    });
   };
 
   const handleSave = async () => {
@@ -558,13 +574,14 @@ export function SettingsPanel({ settings, onSave, isLoading, onClose }: Settings
         </div>
       </section>
 
-      {/* Language Settings */}
+      {/* Transcription Settings */}
       <section className="card">
-        <h3 className="text-lg font-semibold text-primary mb-4">Language</h3>
+        <h3 className="text-lg font-semibold text-primary mb-4">Transcription</h3>
         <div className="space-y-4">
+          {/* Language Selection - at the top */}
           <div>
             <label className="block text-sm font-medium text-text mb-2">
-              Transcription Language
+              Language
             </label>
             <div className="grid grid-cols-4 gap-2">
               {LANGUAGES.map((lang) => (
@@ -583,13 +600,7 @@ export function SettingsPanel({ settings, onSave, isLoading, onClose }: Settings
               ))}
             </div>
           </div>
-        </div>
-      </section>
 
-      {/* Transcription Settings */}
-      <section className="card">
-        <h3 className="text-lg font-semibold text-primary mb-4">Transcription</h3>
-        <div className="space-y-4">
           {/* Whisper.cpp Status */}
           <div className={`p-4 rounded-lg border ${
             whisperAvailable ? 'border-success bg-success/10' : 'border-secondary'
@@ -697,27 +708,45 @@ export function SettingsPanel({ settings, onSave, isLoading, onClose }: Settings
           </div>
 
           {/* Whisper Model Selection - shown when whisper is available and models are installed */}
-          {whisperAvailable && availableModels.some(m => m.installed) && (
-            <div className="p-4 rounded-lg border border-secondary">
-              <label className="block text-sm font-medium text-text mb-2">
-                Transcription Model
-              </label>
-              <select
-                value={localSettings.whisperModel || 'base'}
-                onChange={(e) => handleChange('whisperModel', e.target.value)}
-                className="input w-full"
-              >
-                {availableModels.filter(m => m.installed).map((model) => (
-                  <option key={model.id} value={model.id}>
-                    {model.name} ({model.size})
-                  </option>
-                ))}
-              </select>
-              <p className="text-xs text-text-muted mt-2">
-                Larger models are more accurate but slower. Use multilingual models for non-English languages.
-              </p>
-            </div>
-          )}
+          {whisperAvailable && availableModels.some(m => m.installed) && (() => {
+            // Filter models based on language selection
+            // English: all models available
+            // Other languages: only multilingual models
+            const isEnglish = localSettings.language === 'en';
+            const filteredModels = availableModels.filter(m =>
+              m.installed && (isEnglish || m.isMultilingual)
+            );
+
+            return filteredModels.length > 0 ? (
+              <div className="p-4 rounded-lg border border-secondary">
+                <label className="block text-sm font-medium text-text mb-2">
+                  Transcription Model
+                </label>
+                <select
+                  value={localSettings.whisperModel || 'base'}
+                  onChange={(e) => handleChange('whisperModel', e.target.value)}
+                  className="input w-full"
+                >
+                  {filteredModels.map((model) => (
+                    <option key={model.id} value={model.id}>
+                      {model.name} ({model.size})
+                    </option>
+                  ))}
+                </select>
+                <p className="text-xs text-text-muted mt-2">
+                  {isEnglish
+                    ? 'Larger models are more accurate but slower.'
+                    : 'Only multilingual models support non-English languages.'}
+                </p>
+              </div>
+            ) : !isEnglish ? (
+              <div className="p-4 rounded-lg border border-warning bg-warning/10">
+                <p className="text-sm text-warning">
+                  No multilingual models installed. Download a multilingual model below to transcribe in {LANGUAGES.find(l => l.value === localSettings.language)?.label || 'this language'}.
+                </p>
+              </div>
+            ) : null;
+          })()}
 
           {/* Cloud Fallback */}
           <div className="p-4 rounded-lg border border-secondary">
