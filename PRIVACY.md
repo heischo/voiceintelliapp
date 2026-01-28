@@ -63,7 +63,7 @@ When using optional cloud services:
 
 - **OpenAI**: Subject to [OpenAI's Privacy Policy](https://openai.com/privacy)
 - **OpenRouter**: Subject to [OpenRouter's Privacy Policy](https://openrouter.ai/privacy)
-- **Notion**: Subject to [Notion's Privacy Policy](https://www.notion.so/privacy)
+- **Notion**: Subject to [Notion's Privacy Policy](https://privacycenter.notion.so/policies)
 
 We recommend reviewing these policies before enabling cloud services.
 
@@ -150,7 +150,7 @@ Bei Nutzung optionaler Cloud-Dienste:
 
 - **OpenAI**: Unterliegt der [Datenschutzrichtlinie von OpenAI](https://openai.com/privacy)
 - **OpenRouter**: Unterliegt der [Datenschutzrichtlinie von OpenRouter](https://openrouter.ai/privacy)
-- **Notion**: Unterliegt der [Datenschutzrichtlinie von Notion](https://www.notion.so/privacy)
+- **Notion**: Unterliegt der [Datenschutzrichtlinie von Notion](https://privacycenter.notion.so/policies)
 
 **Datenübermittlung in Drittländer**: Bei Nutzung von OpenAI, OpenRouter oder Notion können Daten in die USA übertragen werden. Diese Übertragung erfolgt auf Grundlage von Standardvertragsklauseln (Art. 46 Abs. 2 lit. c DSGVO).
 
