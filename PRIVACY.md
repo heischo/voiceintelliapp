@@ -22,6 +22,7 @@ By default, all voice processing happens locally on your device:
 
 - **Audio Recording**: Captured and processed locally using your device's microphone
 - **Speech-to-Text**: Transcription is performed locally using whisper.cpp
+- **LLM Enrichment**: Optional local processing using Ollama (no data leaves your device)
 - **Storage**: All transcriptions and history are stored locally on your device
 - **API Keys**: Stored securely in your operating system's keychain/credential manager
 
@@ -34,8 +35,9 @@ If you choose to configure cloud services, the following data may be transmitted
 | OpenAI Whisper API | Audio recordings | Cloud-based transcription |
 | OpenAI GPT API | Transcribed text | Text enrichment/processing |
 | OpenRouter API | Transcribed text | Text enrichment/processing |
+| Notion API | Enriched text content | Saving content to Notion pages/databases |
 
-**Important**: Cloud services are entirely optional. You can use Voice Intelligence completely offline with local transcription.
+**Important**: Cloud services are entirely optional. You can use Voice Intelligence completely offline with local transcription (whisper.cpp) and local LLM enrichment (Ollama).
 
 ### Data Storage
 
@@ -61,6 +63,7 @@ When using optional cloud services:
 
 - **OpenAI**: Subject to [OpenAI's Privacy Policy](https://openai.com/privacy)
 - **OpenRouter**: Subject to [OpenRouter's Privacy Policy](https://openrouter.ai/privacy)
+- **Notion**: Subject to [Notion's Privacy Policy](https://www.notion.so/privacy)
 
 We recommend reviewing these policies before enabling cloud services.
 
@@ -100,6 +103,7 @@ Standardmäßig erfolgt die gesamte Sprachverarbeitung lokal auf Ihrem Gerät:
 
 - **Audioaufnahme**: Wird lokal über das Mikrofon Ihres Geräts erfasst und verarbeitet
 - **Sprache-zu-Text**: Transkription erfolgt lokal mit whisper.cpp
+- **LLM-Anreicherung**: Optionale lokale Verarbeitung mit Ollama (keine Daten verlassen Ihr Gerät)
 - **Speicherung**: Alle Transkriptionen und der Verlauf werden lokal auf Ihrem Gerät gespeichert
 - **API-Schlüssel**: Sicher im Schlüsselbund/Credential-Manager Ihres Betriebssystems gespeichert
 
@@ -112,8 +116,9 @@ Wenn Sie Cloud-Dienste konfigurieren, können folgende Daten übertragen werden:
 | OpenAI Whisper API | Audioaufnahmen | Cloud-basierte Transkription |
 | OpenAI GPT API | Transkribierter Text | Textanreicherung/-verarbeitung |
 | OpenRouter API | Transkribierter Text | Textanreicherung/-verarbeitung |
+| Notion API | Angereicherte Textinhalte | Speichern von Inhalten in Notion-Seiten/Datenbanken |
 
-**Wichtig**: Cloud-Dienste sind vollständig optional. Sie können Voice Intelligence komplett offline mit lokaler Transkription nutzen.
+**Wichtig**: Cloud-Dienste sind vollständig optional. Sie können Voice Intelligence komplett offline mit lokaler Transkription (whisper.cpp) und lokaler LLM-Anreicherung (Ollama) nutzen.
 
 ### Rechtsgrundlage (Art. 6 DSGVO)
 
@@ -145,8 +150,9 @@ Bei Nutzung optionaler Cloud-Dienste:
 
 - **OpenAI**: Unterliegt der [Datenschutzrichtlinie von OpenAI](https://openai.com/privacy)
 - **OpenRouter**: Unterliegt der [Datenschutzrichtlinie von OpenRouter](https://openrouter.ai/privacy)
+- **Notion**: Unterliegt der [Datenschutzrichtlinie von Notion](https://www.notion.so/privacy)
 
-**Datenübermittlung in Drittländer**: Bei Nutzung von OpenAI oder OpenRouter können Daten in die USA übertragen werden. Diese Übertragung erfolgt auf Grundlage von Standardvertragsklauseln (Art. 46 Abs. 2 lit. c DSGVO).
+**Datenübermittlung in Drittländer**: Bei Nutzung von OpenAI, OpenRouter oder Notion können Daten in die USA übertragen werden. Diese Übertragung erfolgt auf Grundlage von Standardvertragsklauseln (Art. 46 Abs. 2 lit. c DSGVO).
 
 Wir empfehlen, diese Richtlinien vor der Aktivierung von Cloud-Diensten zu lesen.
 
@@ -207,21 +213,23 @@ For personvernrelaterte spørsmål, vennligst åpne en sak på vårt GitHub-repo
 │  │  Recording  │    │    .cpp     │    │  Storage    │     │
 │  └─────────────┘    └─────────────┘    └─────────────┘     │
 │         │                                     │              │
-│         │ (optional)                          │              │
-│         ▼                                     ▼              │
-│  ┌─────────────┐                      ┌─────────────┐       │
-│  │   Cloud     │◀────────────────────▶│    LLM      │       │
-│  │    STT      │  (only if configured)│  Enrichment │       │
-│  └─────────────┘                      └─────────────┘       │
-└─────────────────────────────────────────────────────────────┘
-                           │
-                    Only if you choose
-                           │
-                           ▼
-              ┌─────────────────────────┐
-              │   External Services     │
-              │  (OpenAI, OpenRouter)   │
-              └─────────────────────────┘
+│         │ (optional)              ┌───────────┘              │
+│         ▼                         ▼                          │
+│  ┌─────────────┐           ┌─────────────┐                  │
+│  │   Cloud     │           │   Ollama    │ (local LLM)      │
+│  │    STT      │           │  Enrichment │                  │
+│  └─────────────┘           └─────────────┘                  │
+│         │                         │                          │
+│         │  (only if configured)   │ (stays on device)        │
+└─────────┼─────────────────────────┼─────────────────────────┘
+          │                         │
+          │    Only if you choose   │
+          ▼                         │
+┌─────────────────────────┐         │
+│   External Services     │         │
+│  (OpenAI, OpenRouter,   │◀────────┘ (optional cloud LLM)
+│   Notion)               │
+└─────────────────────────┘
 ```
 
 ### Data Flow
