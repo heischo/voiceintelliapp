@@ -12,7 +12,6 @@ export type EnrichmentMode =
 export type OutputTarget = 'clipboard' | 'file';
 
 export type LLMProvider = 'openai' | 'openrouter' | 'ollama';
-export type LLMProvider = 'openai' | 'openrouter' | 'ollama';
 
 export type Language = 'en' | 'de' | 'no';
 

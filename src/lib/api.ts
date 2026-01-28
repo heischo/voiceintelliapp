@@ -7,7 +7,7 @@ import { register, unregister, isRegistered } from '@tauri-apps/plugin-global-sh
 import { Store } from '@tauri-apps/plugin-store';
 import { save } from '@tauri-apps/plugin-dialog';
 import { writeTextFile, writeFile, readTextFile, exists, mkdir, BaseDirectory } from '@tauri-apps/plugin-fs';
-import type { Settings, NotionSettings, WhisperModel, DownloadProgress, DownloadResult } from '../types';
+import type { Settings, WhisperModel, DownloadProgress, DownloadResult } from '../types';
 import { generatePdfAsBytes, type PdfOptions } from './pdf';
 import {
   NotionClient,
